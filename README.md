@@ -13,7 +13,7 @@ Stack: Next.js (App Router) + TypeScript, Neon Postgres, Drizzle ORM, deployed o
 
 | Name             | Purpose                                                                 |
 | ---------------- | ----------------------------------------------------------------------- |
-| `DATABASE_URL`   | Neon Postgres connection string                                         |
+| `DATABASE_URL`   | Neon's **direct (non-pooled)** connection string, i.e. the host without `-pooler`. The app uses Neon's HTTP driver, so pooling isn't needed, and migrations should not run through a pooler. |
 | `ADMIN_PASSWORD` | Password for the finance person's login                                 |
 | `SESSION_SECRET` | Long random string used to sign the admin cookie (`openssl rand -hex 32`) |
 | `APP_TIMEZONE`   | Optional. IANA timezone for displayed round dates (default `Africa/Nairobi`) |
