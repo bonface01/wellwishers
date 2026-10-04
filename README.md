@@ -5,7 +5,11 @@ A small web app for a WhatsApp savings group. Members each contribute a fixed am
 - **Public page (`/`)** – read-only: this round's recipient, who has paid, payout order, past rounds. No login.
 - **Admin (`/admin`)** – for the finance person: settings, members, payment checklist, close round, WhatsApp update.
 
-**Payout order:** first-name initial (A–Z), then second-name initial, then full first name, then full second name. When everyone has received, a new cycle starts from the top.
+**Payout order:** full first name A–Z (case-insensitive). Only members with exactly the same first name are ordered by second name. When everyone has received, a new cycle starts from the top.
+
+**Currency:** defaults to `KSh` and is shown before the amount everywhere, e.g. `KSh 1,000`.
+
+**Joining mid-cycle:** in Settings set the current round number, then on the Members tab mark who has already received this cycle.
 
 Stack: Next.js (App Router) + TypeScript, Neon Postgres, Drizzle ORM, deployed on Vercel.
 
@@ -48,4 +52,4 @@ Rerun `npm run db:migrate` whenever a new migration is added.
 - The group settings row is created automatically on first load.
 - "Close round and pay out" records the round in history, marks the recipient as received, clears payments and moves to the next round. When the last member in the cycle is paid out, the cycle resets automatically.
 - Removing a member deletes their current-round payment; past history is kept as-is.
-- Admin login is rate limited per IP: 5 failed attempts lock that IP out for 15 minutes. Attempts are stored in the `login_attempts` table, so it works across serverless instances. A successful login clears the counter.
+- Admin login is rate limited per IP: 5 failed attempts lock that IP out for 15 minutes. IPs are normalised first (`::ffff:` prefix stripped, `::1` = `127.0.0.1`, IPv6 grouped by /64). Attempts are stored in the `login_attempts` table, so it works across serverless instances. A successful login clears the counter.

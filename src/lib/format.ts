@@ -1,6 +1,7 @@
+// Currency goes before the amount, e.g. "KSh 1,000".
 export function formatMoney(n: number, currency: string): string {
   const num = n.toLocaleString("en-US", { maximumFractionDigits: 2 });
-  return currency ? `${num} ${currency}` : num;
+  return currency ? `${currency} ${num}` : num;
 }
 
 const DEFAULT_TIMEZONE = "Africa/Nairobi";

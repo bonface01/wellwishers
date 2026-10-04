@@ -53,14 +53,25 @@ export async function saveSettings(_: FormState, formData: FormData): Promise<Fo
   const amount = Number(formData.get("amount"));
   const recipientPays = formData.get("recipientPays") === "on";
 
+  const round = Number(formData.get("currentRound"));
+
   if (!name) return { error: "Group name is required." };
   if (!Number.isFinite(amount) || amount < 0) return { error: "Enter a valid contribution amount." };
+  if (!Number.isInteger(round) || round < 1) return { error: "Round number must be a whole number, 1 or higher." };
 
-  await getGroup();
-  await getDb()
+  const group = await getGroup();
+  const db = getDb();
+  const update = db
     .update(groups)
-    .set({ name, currency, amount: amount.toFixed(2), recipientPays })
+    .set({ name, currency, amount: amount.toFixed(2), recipientPays, currentRound: round })
     .where(eq(groups.id, 1));
+
+  if (round !== group.currentRound) {
+    // Payments belong to a specific round, so jumping to another round starts with a clean checklist.
+    await db.batch([update, db.delete(payments)]);
+  } else {
+    await update;
+  }
   refresh();
   return { ok: true };
 }
@@ -103,6 +114,23 @@ export async function removeMember(formData: FormData) {
     await db.update(members).set({ receivedThisCycle: false });
   }
   refresh();
+}
+
+// Used to set up a group that is already part-way through a cycle.
+export async function setReceived(memberId: number, received: boolean): Promise<FormState> {
+  await requireAdmin();
+  const db = getDb();
+  const all = await db.select().from(members);
+  if (!all.some((m) => m.id === memberId)) return { error: "Member not found." };
+
+  if (received && all.every((m) => m.id === memberId || m.receivedThisCycle)) {
+    return {
+      error: "At least one member must still be waiting to receive. To begin a new cycle, use Start new cycle.",
+    };
+  }
+  await db.update(members).set({ receivedThisCycle: received }).where(eq(members.id, memberId));
+  refresh();
+  return { ok: true };
 }
 
 // ---- Rounds ----

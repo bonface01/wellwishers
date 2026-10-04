@@ -12,15 +12,10 @@ export function fullName(m: { firstName: string; secondName: string }) {
 
 type Named = { firstName: string; secondName: string };
 
-const cmp = (a: string, b: string) => a.localeCompare(b, "en", { sensitivity: "base" });
-const initial = (s: string) => s.trim().charAt(0).toUpperCase();
+// Case-insensitive alphabetical comparison.
+const cmp = (a: string, b: string) => a.trim().localeCompare(b.trim(), "en", { sensitivity: "accent" });
 
-// First initial, then second-name initial, then full first name, then full second name.
+// Full first name A–Z; only members with exactly the same first name are ordered by second name.
 export function comparePayoutOrder(a: Named, b: Named): number {
-  return (
-    cmp(initial(a.firstName), initial(b.firstName)) ||
-    cmp(initial(a.secondName), initial(b.secondName)) ||
-    cmp(a.firstName, b.firstName) ||
-    cmp(a.secondName, b.secondName)
-  );
+  return cmp(a.firstName, b.firstName) || cmp(a.secondName, b.secondName);
 }

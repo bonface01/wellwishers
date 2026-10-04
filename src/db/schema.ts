@@ -15,7 +15,7 @@ export const groups = pgTable("group", {
   id: integer("id").primaryKey().default(1),
   name: text("name").notNull().default("Contribution Circle"),
   amount: numeric("amount", { precision: 12, scale: 2 }).notNull().default("0"),
-  currency: text("currency").notNull().default(""),
+  currency: text("currency").notNull().default("KSh"),
   recipientPays: boolean("recipient_pays").notNull().default(true),
   currentRound: integer("current_round").notNull().default(1),
 });

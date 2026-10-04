@@ -2,6 +2,7 @@ import { eq, sql } from "drizzle-orm";
 import { headers } from "next/headers";
 import { getDb } from "@/db";
 import { loginAttempts } from "@/db/schema";
+import { normalizeIp } from "./ip";
 
 export const MAX_FAILED_ATTEMPTS = 5;
 export const LOCKOUT_MINUTES = 15;
@@ -9,7 +10,7 @@ export const LOCKOUT_MINUTES = 15;
 export async function clientIp(): Promise<string> {
   const h = await headers();
   const forwarded = h.get("x-forwarded-for")?.split(",")[0]?.trim();
-  return forwarded || h.get("x-real-ip")?.trim() || "unknown";
+  return normalizeIp(forwarded || h.get("x-real-ip"));
 }
 
 /** Minutes left on an active lockout for this IP, or 0 if not locked. */

@@ -1,6 +1,13 @@
 "use client";
 
-import { useActionState, useOptimistic, useRef, useState, useTransition } from "react";
+import {
+  useActionState,
+  useOptimistic,
+  useRef,
+  useState,
+  useTransition,
+  type ReactNode,
+} from "react";
 import {
   addMember,
   closeRound,
@@ -8,6 +15,7 @@ import {
   removeMember,
   saveSettings,
   setPaid,
+  setReceived,
   startNewCycle,
   type FormState,
 } from "@/app/actions";
@@ -16,6 +24,58 @@ function Msg({ state }: { state: FormState }) {
   if (state?.error) return <p className="msg error" role="alert">{state.error}</p>;
   if (state?.ok) return <p className="msg ok">Saved.</p>;
   return null;
+}
+
+/**
+ * A form whose submit is guarded by an in-page confirmation sheet (native <dialog>),
+ * replacing window.confirm(). Large buttons, bottom sheet on phones.
+ */
+function ConfirmForm(props: {
+  action: (formData: FormData) => void | Promise<void>;
+  trigger: ReactNode;
+  triggerClassName: string;
+  triggerLabel?: string;
+  title: string;
+  confirmLabel: string;
+  danger?: boolean;
+  hidden?: ReactNode;
+  children: ReactNode;
+}) {
+  const dialogRef = useRef<HTMLDialogElement>(null);
+  const close = () => dialogRef.current?.close();
+  return (
+    <form action={props.action}>
+      {props.hidden}
+      <button
+        type="button"
+        className={props.triggerClassName}
+        aria-label={props.triggerLabel}
+        onClick={() => dialogRef.current?.showModal()}
+      >
+        {props.trigger}
+      </button>
+      <dialog
+        ref={dialogRef}
+        className="sheet"
+        aria-label={props.title}
+        onClick={(e) => {
+          // Click on the backdrop (the dialog element itself) dismisses it.
+          if (e.target === e.currentTarget) close();
+        }}
+      >
+        <div className="sheet-inner">
+          <h3>{props.title}</h3>
+          <div className="sheet-body">{props.children}</div>
+          <div className="sheet-actions">
+            <button type="button" className="btn" onClick={close}>Cancel</button>
+            <button type="submit" className={`btn ${props.danger ? "danger-solid" : "primary"}`} onClick={close}>
+              {props.confirmLabel}
+            </button>
+          </div>
+        </div>
+      </dialog>
+    </form>
+  );
 }
 
 export function LoginForm() {
@@ -37,6 +97,7 @@ export function SettingsForm(props: {
   amount: number;
   currency: string;
   recipientPays: boolean;
+  currentRound: number;
 }) {
   const [state, action, pending] = useActionState(saveSettings, undefined);
   return (
@@ -46,18 +107,26 @@ export function SettingsForm(props: {
         <input name="name" defaultValue={props.name} required />
       </label>
       <div className="row">
+        <label className="currency">
+          Currency
+          <input name="currency" defaultValue={props.currency} placeholder="e.g. KSh" />
+        </label>
         <label className="grow">
           Contribution amount
           <input name="amount" type="number" inputMode="decimal" min="0" step="any" defaultValue={props.amount} required />
-        </label>
-        <label className="currency">
-          Currency
-          <input name="currency" defaultValue={props.currency} placeholder="e.g. QAR" />
         </label>
       </div>
       <label className="check">
         <input type="checkbox" name="recipientPays" defaultChecked={props.recipientPays} />
         <span>Recipient also contributes that round</span>
+      </label>
+      <label>
+        Current round number
+        <input name="currentRound" type="number" inputMode="numeric" min="1" step="1" defaultValue={props.currentRound} required />
+        <small className="muted">
+          Joining a group that is already running? Set the round you are on. Changing this clears the
+          payment checklist. Then mark who has already received on the Members tab.
+        </small>
       </label>
       <Msg state={state} />
       <button className="btn primary" disabled={pending}>{pending ? "Saving…" : "Save settings"}</button>
@@ -92,17 +161,48 @@ export function AddMemberForm() {
 
 export function RemoveMemberButton({ id, name }: { id: number; name: string }) {
   return (
-    <form
+    <ConfirmForm
       action={removeMember}
-      onSubmit={(e) => {
-        if (!confirm(`Remove ${name} from the group? Their payment for this round will be cleared.`)) {
-          e.preventDefault();
-        }
-      }}
+      trigger="Remove"
+      triggerClassName="btn danger small"
+      triggerLabel={`Remove ${name}`}
+      title={`Remove ${name}?`}
+      confirmLabel="Remove"
+      danger
+      hidden={<input type="hidden" name="id" value={id} />}
     >
-      <input type="hidden" name="id" value={id} />
-      <button className="btn danger small" aria-label={`Remove ${name}`}>Remove</button>
-    </form>
+      <p>
+        {name} will be taken out of the payout order and their payment for this round will be cleared. Past
+        history is kept.
+      </p>
+    </ConfirmForm>
+  );
+}
+
+export function ReceivedToggle({ memberId, name, received }: { memberId: number; name: string; received: boolean }) {
+  const [optimistic, setOptimistic] = useOptimistic(received);
+  const [error, setError] = useState<string>();
+  const [, startTransition] = useTransition();
+  return (
+    <div className="received">
+      <button
+        type="button"
+        className={`btn small ${optimistic ? "is-on" : ""}`}
+        aria-pressed={optimistic}
+        aria-label={`${name}: ${optimistic ? "already received this cycle" : "not received yet"}`}
+        onClick={() =>
+          startTransition(async () => {
+            setError(undefined);
+            setOptimistic(!optimistic);
+            const result = await setReceived(memberId, !optimistic);
+            if (result?.error) setError(result.error);
+          })
+        }
+      >
+        {optimistic ? "✓ Received" : "Not received"}
+      </button>
+      {error && <p className="msg error" role="alert">{error}</p>}
+    </div>
   );
 }
 
@@ -129,54 +229,80 @@ export function PaymentToggle({ memberId, name, paid }: { memberId: number; name
 
 export function CloseRoundForm(props: { round: number; recipient: string; unpaid: string[] }) {
   return (
-    <form
+    <ConfirmForm
       action={closeRound}
-      onSubmit={(e) => {
-        const warning = props.unpaid.length
-          ? `\n\nWarning: ${props.unpaid.length} member(s) have not paid:\n${props.unpaid.map((n) => `• ${n}`).join("\n")}`
-          : "";
-        if (!confirm(`Close round ${props.round} and pay out to ${props.recipient}?${warning}`)) {
-          e.preventDefault();
-        }
-      }}
+      trigger="Close round and pay out"
+      triggerClassName="btn primary big"
+      title={`Close round ${props.round}?`}
+      confirmLabel="Close and pay out"
+      hidden={<input type="hidden" name="round" value={props.round} />}
     >
-      <input type="hidden" name="round" value={props.round} />
-      <button className="btn primary big">Close round and pay out</button>
-    </form>
+      <p>
+        This records the round in history and pays out to <strong>{props.recipient}</strong>.
+      </p>
+      {props.unpaid.length > 0 && (
+        <div className="warn" role="alert">
+          <strong>{props.unpaid.length} member(s) have not paid:</strong>
+          <ul>
+            {props.unpaid.map((n) => (
+              <li key={n}>{n}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </ConfirmForm>
   );
 }
 
 export function NewCycleButton() {
   return (
-    <form
+    <ConfirmForm
       action={startNewCycle}
-      onSubmit={(e) => {
-        if (!confirm("Start a new cycle? Everyone will be marked as not yet received. Members and history are kept.")) {
-          e.preventDefault();
-        }
-      }}
+      trigger="Start new cycle"
+      triggerClassName="btn"
+      title="Start a new cycle?"
+      confirmLabel="Start new cycle"
     >
-      <button className="btn">Start new cycle</button>
-    </form>
+      <p>Everyone will be marked as not yet received. Members and history are kept.</p>
+    </ConfirmForm>
   );
 }
 
 export function WhatsAppShare({ message }: { message: string }) {
-  const [copied, setCopied] = useState(false);
+  const preRef = useRef<HTMLPreElement>(null);
+  const [status, setStatus] = useState<"idle" | "copied" | "manual">("idle");
+
+  function selectMessage() {
+    const pre = preRef.current;
+    const selection = window.getSelection();
+    if (!pre || !selection) return;
+    const range = document.createRange();
+    range.selectNodeContents(pre);
+    selection.removeAllRanges();
+    selection.addRange(range);
+  }
+
   async function copy() {
     try {
-      await navigator.clipboard.writeText(message);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
+      // Some browsers leave the promise pending when clipboard access is blocked, so don't wait forever.
+      await Promise.race([
+        navigator.clipboard.writeText(message),
+        new Promise((_, reject) => setTimeout(() => reject(new Error("timeout")), 2000)),
+      ]);
+      setStatus("copied");
+      setTimeout(() => setStatus("idle"), 2000);
     } catch {
-      alert("Could not copy. Select the text and copy it manually.");
+      selectMessage();
+      setStatus("manual");
     }
   }
+
   return (
     <div className="stack">
-      <pre className="wa-preview">{message}</pre>
+      <pre ref={preRef} className="wa-preview">{message}</pre>
+      {status === "manual" && <p className="msg" role="status">Press and hold to copy</p>}
       <div className="row">
-        <button type="button" className="btn grow" onClick={copy}>{copied ? "Copied ✓" : "Copy"}</button>
+        <button type="button" className="btn grow" onClick={copy}>{status === "copied" ? "Copied ✓" : "Copy"}</button>
         <a
           className="btn primary grow"
           href={`https://wa.me/?text=${encodeURIComponent(message)}`}

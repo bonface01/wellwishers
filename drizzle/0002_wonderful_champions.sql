@@ -1,0 +1,1 @@
+ALTER TABLE "group" ALTER COLUMN "currency" SET DEFAULT 'KSh';

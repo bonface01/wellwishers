@@ -15,6 +15,13 @@
       "when": 1791145408662,
       "tag": "0001_lethal_peter_quill",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1791147465602,
+      "tag": "0002_wonderful_champions",
+      "breakpoints": true
     }
   ]
 }
