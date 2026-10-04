@@ -1,13 +1,6 @@
 "use client";
 
-import {
-  useActionState,
-  useOptimistic,
-  useRef,
-  useState,
-  useTransition,
-  type ReactNode,
-} from "react";
+import { useActionState, useOptimistic, useRef, useState, useTransition, type ReactNode } from "react";
 import {
   addMember,
   closeRound,
@@ -19,10 +12,11 @@ import {
   type FormState,
 } from "@/app/actions";
 import { useHydrated } from "@/lib/use-hydrated";
+import { SheetDialog } from "./ui";
 
 function Msg({ state }: { state: FormState }) {
   if (state?.error) return <p className="msg error" role="alert">{state.error}</p>;
-  if (state?.ok) return <p className="msg ok">Saved.</p>;
+  if (state?.ok) return <p className="msg ok" role="status">Saved.</p>;
   return null;
 }
 
@@ -35,6 +29,8 @@ function ConfirmForm(props: {
   trigger: ReactNode;
   triggerClassName: string;
   triggerLabel?: string;
+  triggerAction?: string;
+  formClassName?: string;
   title: string;
   confirmLabel: string;
   danger?: boolean;
@@ -46,37 +42,27 @@ function ConfirmForm(props: {
   const dialogRef = useRef<HTMLDialogElement>(null);
   const close = () => dialogRef.current?.close();
   return (
-    <form action={props.action}>
+    <form action={props.action} className={props.formClassName}>
       {props.hidden}
       <button
         type="button"
         className={props.triggerClassName}
         aria-label={props.triggerLabel}
+        data-action={props.triggerAction}
         disabled={!hydrated || props.disabled}
         onClick={() => dialogRef.current?.showModal()}
       >
         {props.trigger}
       </button>
-      <dialog
-        ref={dialogRef}
-        className="sheet"
-        aria-label={props.title}
-        onClick={(e) => {
-          // Click on the backdrop (the dialog element itself) dismisses it.
-          if (e.target === e.currentTarget) close();
-        }}
-      >
-        <div className="sheet-inner">
-          <h3>{props.title}</h3>
-          <div className="sheet-body">{props.children}</div>
-          <div className="sheet-actions">
-            <button type="button" className="btn" onClick={close}>Cancel</button>
-            <button type="submit" className={`btn ${props.danger ? "danger-solid" : "primary"}`} onClick={close}>
-              {props.confirmLabel}
-            </button>
-          </div>
+      <SheetDialog dialogRef={dialogRef} title={props.title}>
+        <div className="sheet-body">{props.children}</div>
+        <div className="sheet-actions">
+          <button type="button" className="btn" onClick={close}>Cancel</button>
+          <button type="submit" className={`btn ${props.danger ? "danger-solid" : "primary"}`} onClick={close}>
+            {props.confirmLabel}
+          </button>
         </div>
-      </dialog>
+      </SheetDialog>
     </form>
   );
 }
@@ -123,13 +109,13 @@ export function SettingsForm(props: {
       </div>
       <label className="check">
         <input type="checkbox" name="recipientPays" defaultChecked={props.recipientPays} />
-        <span>Recipient also contributes that round</span>
+        <span>Recipient also contributes that week</span>
       </label>
       <label>
-        Current round number
+        Current week number
         <input name="currentRound" type="number" inputMode="numeric" min="1" step="1" defaultValue={props.currentRound} required />
         <small className="muted">
-          Joining a group that is already running? Set the round you are on. Changing this clears the
+          Joining a group that is already running? Set the week you are on. Changing this clears the
           payment checklist. Then mark who has already received on the Members tab.
         </small>
       </label>
@@ -178,7 +164,7 @@ export function RemoveMemberButton({ id, name }: { id: number; name: string }) {
       hidden={<input type="hidden" name="id" value={id} />}
     >
       <p>
-        {name} will be taken out of the payout order and their payment for this round will be cleared. Past
+        {name} will be taken out of the payout order and their payment for this week will be cleared. Past
         history is kept.
       </p>
     </ConfirmForm>
@@ -223,19 +209,28 @@ export function ReceivedToggle({ memberId, name, received }: { memberId: number;
   );
 }
 
-export function CloseRoundForm(props: { round: number; recipient: string; unpaid: string[]; disabled?: boolean }) {
+export function CloseRoundForm(props: {
+  round: number;
+  recipient: string;
+  unpaid: string[];
+  disabled?: boolean;
+  /** Defaults to the real server action. Overridden only by the offline design preview. */
+  action?: (formData: FormData) => void | Promise<void>;
+}) {
   return (
     <ConfirmForm
-      action={closeRound}
-      trigger="Close round and pay out"
-      triggerClassName="btn primary big"
+      action={props.action ?? closeRound}
+      trigger="Close week"
+      triggerClassName="btn dark"
+      triggerAction="close-week"
+      formClassName="action-cell"
       disabled={props.disabled}
-      title={`Close round ${props.round}?`}
-      confirmLabel="Close and pay out"
+      title={`Close week ${props.round}?`}
+      confirmLabel="Close week"
       hidden={<input type="hidden" name="round" value={props.round} />}
     >
       <p>
-        This records the round in history and pays out to <strong>{props.recipient}</strong>.
+        This records the week in history and pays out to <strong>{props.recipient}</strong>.
       </p>
       {props.unpaid.length > 0 && (
         <div className="warn" role="alert">
@@ -262,54 +257,5 @@ export function NewCycleButton() {
     >
       <p>Everyone will be marked as not yet received. Members and history are kept.</p>
     </ConfirmForm>
-  );
-}
-
-export function WhatsAppShare({ message }: { message: string }) {
-  const hydrated = useHydrated();
-  const preRef = useRef<HTMLPreElement>(null);
-  const [status, setStatus] = useState<"idle" | "copied" | "manual">("idle");
-
-  function selectMessage() {
-    const pre = preRef.current;
-    const selection = window.getSelection();
-    if (!pre || !selection) return;
-    const range = document.createRange();
-    range.selectNodeContents(pre);
-    selection.removeAllRanges();
-    selection.addRange(range);
-  }
-
-  async function copy() {
-    try {
-      // Some browsers leave the promise pending when clipboard access is blocked, so don't wait forever.
-      await Promise.race([
-        navigator.clipboard.writeText(message),
-        new Promise((_, reject) => setTimeout(() => reject(new Error("timeout")), 2000)),
-      ]);
-      setStatus("copied");
-      setTimeout(() => setStatus("idle"), 2000);
-    } catch {
-      selectMessage();
-      setStatus("manual");
-    }
-  }
-
-  return (
-    <div className="stack">
-      <pre ref={preRef} className="wa-preview">{message}</pre>
-      {status === "manual" && <p className="msg" role="status">Press and hold to copy</p>}
-      <div className="row">
-        <button type="button" className="btn grow" disabled={!hydrated} onClick={copy}>{status === "copied" ? "Copied ✓" : "Copy"}</button>
-        <a
-          className="btn primary grow"
-          href={`https://wa.me/?text=${encodeURIComponent(message)}`}
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          Open in WhatsApp
-        </a>
-      </div>
-    </div>
   );
 }

@@ -48,6 +48,10 @@ Rerun `npm run db:migrate` whenever a new migration is added.
 
 ## Notes
 
+- **Share update** (Round tab) opens a sheet with the WhatsApp text (Copy / Open in WhatsApp) and **Download status image**, a 1080×1920 PNG drawn in the browser with canvas (no external service).
+- The "Payout in …" countdown targets Sunday 18:00 Nairobi time (fixed in `src/lib/countdown.ts`); it is display-only.
+- `npm test` runs the unit and component tests.
+
 - The database starts empty. The admin dashboard prompts you to add members and set the contribution amount.
 - The group settings row is created automatically on first load.
 - "Close round and pay out" records the round in history, marks the recipient as received, clears payments and moves to the next round. When the last member in the cycle is paid out, the cycle resets automatically.

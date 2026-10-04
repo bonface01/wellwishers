@@ -40,6 +40,9 @@ let root: Root | undefined;
 
 const toggles = () => [...container.querySelectorAll<HTMLButtonElement>(".toggle")];
 const q = (sel: string) => container.querySelector(sel)!;
+const collected = () => (q(".hero-collected .num") as HTMLElement).dataset.value;
+const ringNow = () => q("[role=progressbar]").getAttribute("aria-valuenow");
+const closeDialog = () => q('dialog[aria-label^="Close week"]');
 const flush = () => act(async () => { await new Promise((r) => setTimeout(r, 10)); });
 const tap = (el: HTMLElement) => act(async () => { el.click(); });
 
@@ -49,9 +52,9 @@ function deferred<T>() {
   return { promise, resolve };
 }
 
-async function mount() {
+async function mount(p: LiveRoundProps = props) {
   root = createRoot(container);
-  await act(async () => { root!.render(<RoundLive {...props} />); });
+  await act(async () => { root!.render(<RoundLive {...p} />); });
 }
 
 beforeEach(() => {
@@ -66,23 +69,41 @@ afterEach(async () => {
   container.remove();
 });
 
+describe("RoundLive layout", () => {
+  it("shows the week, the recipient, the amount and each member's status line", async () => {
+    await mount();
+    expect(q(".round-head h1").textContent).toBe("Week 3");
+    expect(q(".hero-name").textContent).toBe("Agnes Wanjira");
+    expect(q(".hero-expected").textContent).toBe("of KSh 300 expected");
+    expect(q(".hero-next").textContent).toContain("Next week: Boniface Mutinda");
+    expect(q(".ring-label").textContent).toContain("0/3");
+    expect(toggles()).toHaveLength(3);
+    expect(toggles()[0].textContent).toContain("Not paid yet");
+    expect(toggles()[0].querySelector(".avatar")?.textContent).toBe("AW");
+    expect(container.querySelector(".banner")).toBeNull();
+  });
+});
+
 describe("RoundLive optimistic updates", () => {
-  it("updates the toggle, total, paid count, progress bar and message the instant a toggle is tapped", async () => {
+  it("updates the row, hero total, ring, paid count and message the instant a row is tapped", async () => {
     const save = deferred<{ ok: true }>();
     setPaid.mockReturnValue(save.promise); // server has not answered yet
     await mount();
 
-    expect(q(".pot-collected").textContent).toContain("KSh 0");
+    expect(collected()).toBe("0");
 
     await tap(toggles()[0]);
 
     expect(setPaid).toHaveBeenCalledWith(1, true);
     expect(toggles()[0].getAttribute("aria-pressed")).toBe("true");
-    expect(toggles()[0].textContent).toContain("Paid");
-    expect(q(".pot-collected").textContent).toContain("KSh 100");
-    expect(q(".pot-collected").textContent).toContain("of KSh 300");
-    expect(q(".bar").getAttribute("aria-valuenow")).toBe("33");
+    expect(toggles()[0].textContent).toContain("Paid KSh 100");
+    expect(collected()).toBe("100");
+    expect(q(".hero-expected").textContent).toContain("KSh 300");
+    expect(ringNow()).toBe("33");
+    expect(q(".ring-label").textContent).toContain("1/3");
     expect(q(".count").textContent).toContain("1 of 3 paid");
+
+    // The share sheet's message is live too.
     expect(q(".wa-preview").textContent).toContain("✅ Paid (1)");
     expect(q(".wa-preview").textContent).toContain("Collected: KSh 100 of KSh 300");
 
@@ -90,18 +111,19 @@ describe("RoundLive optimistic updates", () => {
     await flush();
   });
 
-  it("rolls everything back and shows a clear error when the server reports a failure", async () => {
+  it("rolls everything back and shows a clear toast when the server reports a failure", async () => {
     setPaid.mockResolvedValue({ error: "The server could not save it." });
     await mount();
 
     await tap(toggles()[0]);
     await flush();
 
-    expect(q("[role=alert]").textContent).toContain("Could not save Agnes Wanjira's payment");
-    expect(q("[role=alert]").textContent).toContain("put back");
+    expect(q(".toast").textContent).toContain("Could not save Agnes Wanjira's payment");
+    expect(q(".toast").textContent).toContain("put back");
+    expect(q(".toast").getAttribute("role")).toBe("alert");
     expect(toggles()[0].getAttribute("aria-pressed")).toBe("false");
-    expect(q(".pot-collected").textContent).toContain("KSh 0");
-    expect(q(".bar").getAttribute("aria-valuenow")).toBe("0");
+    expect(collected()).toBe("0");
+    expect(ringNow()).toBe("0");
     expect(q(".count").textContent).toContain("0 of 3 paid");
     expect(q(".wa-preview").textContent).not.toContain("✅ Paid");
   });
@@ -113,25 +135,73 @@ describe("RoundLive optimistic updates", () => {
     await tap(toggles()[1]);
     await flush();
 
-    expect(q("[role=alert]").textContent).toContain("Could not save Boniface Mutinda's payment");
-    expect(q("[role=alert]").textContent).toContain("connection");
+    expect(q(".toast").textContent).toContain("Could not save Boniface Mutinda's payment");
+    expect(q(".toast").textContent).toContain("connection");
     expect(toggles()[1].getAttribute("aria-pressed")).toBe("false");
-    expect(q(".pot-collected").textContent).toContain("KSh 0");
+    expect(collected()).toBe("0");
   });
 
-  it("clears an old error when the next tap starts", async () => {
+  it("dismisses the toast when tapped and clears it when the next tap starts", async () => {
     setPaid.mockResolvedValueOnce({ error: "The server could not save it." });
     await mount();
     await tap(toggles()[0]);
     await flush();
-    expect(container.querySelector(".msg.error")).not.toBeNull();
+    expect(container.querySelector(".toast")).not.toBeNull();
+
+    await tap(q(".toast") as HTMLElement);
+    expect(container.querySelector(".toast")).toBeNull();
+
+    setPaid.mockResolvedValueOnce({ error: "again" });
+    await tap(toggles()[0]);
+    await flush();
+    expect(container.querySelector(".toast")).not.toBeNull();
 
     const save = deferred<{ ok: true }>();
     setPaid.mockReturnValue(save.promise);
     await tap(toggles()[0]);
-    expect(container.querySelector(".msg.error")).toBeNull();
+    expect(container.querySelector(".toast")).toBeNull();
     save.resolve({ ok: true });
     await flush();
+  });
+});
+
+describe("RoundLive pot complete", () => {
+  const allButOne = {
+    ...props,
+    payers: [
+      { id: 1, name: "Agnes Wanjira", paid: true },
+      { id: 2, name: "Boniface Mutinda", paid: true },
+      { id: 3, name: "Brian Mutinda", paid: false },
+    ],
+  };
+
+  it("turns the ring amber and slides in the banner when the last member is marked paid", async () => {
+    const save = deferred<{ ok: true }>();
+    setPaid.mockReturnValue(save.promise);
+    await mount(allButOne);
+    expect(container.querySelector(".banner")).toBeNull();
+    expect(q(".ring").classList.contains("complete")).toBe(false);
+
+    await tap(toggles()[2]);
+
+    expect(q(".ring").classList.contains("complete")).toBe(true);
+    expect(q(".hero").classList.contains("is-complete")).toBe(true);
+    expect(q(".banner").textContent).toBe("Pot complete. Ready to send to Agnes Wanjira.");
+    expect(q(".banner").getAttribute("role")).toBe("status");
+    expect(q(".wa-preview").textContent).toContain("🎉 Everyone has paid!");
+
+    // Finish the save so no pending action leaks into the next test.
+    save.resolve({ ok: true });
+    await flush();
+  });
+
+  it("takes the banner away again if the save fails and the tap is rolled back", async () => {
+    setPaid.mockResolvedValue({ error: "nope" });
+    await mount(allButOne);
+    await tap(toggles()[2]);
+    await flush();
+    expect(container.querySelector(".banner")).toBeNull();
+    expect(q(".ring").classList.contains("complete")).toBe(false);
   });
 });
 
@@ -167,7 +237,7 @@ describe("RoundLive double taps", () => {
     expect(setPaid).toHaveBeenCalledTimes(2);
     expect(setPaid).toHaveBeenNthCalledWith(1, 1, true);
     expect(setPaid).toHaveBeenNthCalledWith(2, 2, true);
-    expect(q(".pot-collected").textContent).toContain("KSh 200");
+    expect(collected()).toBe("200");
 
     save.resolve({ ok: true });
     await flush();
@@ -185,12 +255,12 @@ describe("RoundLive double taps", () => {
     expect(setPaid).toHaveBeenCalledTimes(2);
   });
 
-  it("disables Close round while any save is in flight", async () => {
+  it("disables Close week while any save is in flight", async () => {
     const save = deferred<{ ok: true }>();
     setPaid.mockReturnValue(save.promise);
     await mount();
 
-    const closeButton = () => q("button.big") as HTMLButtonElement;
+    const closeButton = () => q("[data-action=close-week]") as HTMLButtonElement;
     expect(closeButton().disabled).toBe(false);
 
     await tap(toggles()[0]);
@@ -201,16 +271,20 @@ describe("RoundLive double taps", () => {
     expect(closeButton().disabled).toBe(false);
   });
 
-  it("lists the live unpaid members in the close-round confirmation", async () => {
-    setPaid.mockReturnValue(new Promise(() => {}));
+  it("lists the live unpaid members in the close-week confirmation", async () => {
+    const save = deferred<{ ok: true }>();
+    setPaid.mockReturnValue(save.promise);
     await mount();
     await tap(toggles()[1]);
 
-    const dialogText = q("dialog").textContent ?? "";
+    const dialogText = closeDialog().textContent ?? "";
     expect(dialogText).toContain("2 member(s) have not paid");
     expect(dialogText).toContain("Agnes Wanjira");
     expect(dialogText).toContain("Brian Mutinda");
     expect(dialogText).not.toContain("Boniface Mutinda have not");
+
+    save.resolve({ ok: true });
+    await flush();
   });
 });
 
@@ -219,11 +293,10 @@ describe("RoundLive before the page is ready", () => {
     setPaid.mockResolvedValue({ ok: true });
     container.innerHTML = renderToString(<RoundLive {...props} />);
 
-    // Buttons on the page itself: toggles, Close round, Copy. (The dialog's own buttons only appear after
-    // the Close round button is used.)
-    const interactive = () => [...container.querySelectorAll<HTMLButtonElement>(".toggle, button.big, button.grow")];
+    // Rows plus Share, Close week, Copy and Download image.
+    const interactive = () => [...container.querySelectorAll<HTMLButtonElement>(".toggle, [data-action]")];
     expect(toggles()).toHaveLength(3);
-    expect(interactive()).toHaveLength(5);
+    expect(interactive()).toHaveLength(7);
     expect(interactive().every((b) => b.disabled)).toBe(true);
 
     // A tap before hydration does nothing.

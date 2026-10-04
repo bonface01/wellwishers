@@ -8,10 +8,11 @@ export default async function LoginPage() {
   if (await isAdmin()) redirect("/admin");
   return (
     <main className="page narrow">
-      <header className="top">
-        <h1>Admin sign in</h1>
-        <p className="muted">For the finance person only.</p>
-      </header>
+      <section className="hero login-hero">
+        <p className="hero-label">Contribution Circle</p>
+        <h1 className="hero-name">Admin sign in</h1>
+        <p className="hero-expected">For the finance person only.</p>
+      </section>
       <div className="card">
         <LoginForm />
       </div>

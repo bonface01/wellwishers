@@ -1,12 +1,16 @@
 "use client";
 
-import { useMemo, useOptimistic, useRef, useState, useTransition, type ReactNode } from "react";
-import { setPaid } from "@/app/actions";
+import { useEffect, useMemo, useOptimistic, useRef, useState, useTransition, type ReactNode } from "react";
+import { setPaid, type FormState } from "@/app/actions";
+import { formatMoney } from "@/lib/format";
+import { buzz } from "@/lib/motion";
 import { summarizeRound, type Payer } from "@/lib/round";
 import { useHydrated } from "@/lib/use-hydrated";
 import { buildWhatsAppMessage } from "@/lib/whatsapp";
-import { CloseRoundForm, WhatsAppShare } from "./forms";
-import { PotCardView } from "./PotCard";
+import { CloseRoundForm } from "./forms";
+import { Hero, RoundHeader, isComplete } from "./Hero";
+import { ShareSheet } from "./ShareSheet";
+import { Avatar, Icon } from "./ui";
 
 export type LiveRoundProps = {
   groupName: string;
@@ -19,16 +23,24 @@ export type LiveRoundProps = {
   payers: (Payer & { paid: boolean })[];
   /** Rendered at the top of the Payments card (e.g. a "set the amount" notice). */
   notice?: ReactNode;
+  /** Defaults to the real server actions. Overridden only by the offline design preview. */
+  actions?: {
+    setPaid: (memberId: number, paid: boolean) => Promise<FormState>;
+    closeRound: (formData: FormData) => void | Promise<void>;
+  };
 };
 
 type PaidUpdate = { id: number; paid: boolean };
 
+const TOAST_MS = 7000;
+
 /**
- * The part of the Round tab that depends on who has paid. All of it (toggle, total, progress bar,
- * paid count, WhatsApp text, close-round warning) is derived from one optimistic set of paid ids, so it
- * updates in the same instant a toggle is tapped and rolls back together if the save fails.
+ * The part of the Round tab that depends on who has paid. All of it (rows, hero ring and total, paid count,
+ * banner, WhatsApp text, status image, close-week warning) is derived from one optimistic set of paid ids,
+ * so it updates in the same instant a row is tapped and rolls back together if the save fails.
  */
 export function RoundLive(props: LiveRoundProps) {
+  const save = props.actions?.setPaid ?? setPaid;
   const hydrated = useHydrated();
   const serverPaid = useMemo(
     () => new Set(props.payers.filter((p) => p.paid).map((p) => p.id)),
@@ -47,7 +59,16 @@ export function RoundLive(props: LiveRoundProps) {
   const [error, setError] = useState<string>();
   const [, startTransition] = useTransition();
 
+  useEffect(() => {
+    if (!error) return;
+    const id = setTimeout(() => setError(undefined), TOAST_MS);
+    return () => clearTimeout(id);
+  }, [error]);
+
   const s = summarizeRound(props.payers, paidIds, props.amount);
+  const complete = isComplete(s.paid.length, props.payers.length);
+  const paidNames = s.paid.map((p) => p.name);
+  const unpaidNames = s.unpaid.map((p) => p.name);
   const message = buildWhatsAppMessage({
     groupName: props.groupName,
     round: props.round,
@@ -55,8 +76,8 @@ export function RoundLive(props: LiveRoundProps) {
     currency: props.currency,
     recipientName: props.recipientName,
     nextName: props.nextName,
-    paid: s.paid.map((p) => p.name),
-    unpaid: s.unpaid.map((p) => p.name),
+    paid: paidNames,
+    unpaid: unpaidNames,
   });
 
   function toggle(p: Payer) {
@@ -65,11 +86,12 @@ export function RoundLive(props: LiveRoundProps) {
     inFlight.current.add(p.id);
     setSaving([...inFlight.current]);
     setError(undefined);
+    buzz(10);
 
     startTransition(async () => {
       applyPaid({ id: p.id, paid: next });
       try {
-        const result = await setPaid(p.id, next);
+        const result = await save(p.id, next);
         // On failure nothing is refreshed from the server, so the optimistic value drops back
         // to the saved one when this transition ends.
         if (result?.error) setError(`Could not save ${p.name}'s payment, so it was put back. ${result.error}`);
@@ -84,30 +106,43 @@ export function RoundLive(props: LiveRoundProps) {
 
   return (
     <>
-      <PotCardView
-        round={props.round}
+      <RoundHeader groupName={props.groupName} round={props.round} />
+
+      <Hero
         recipientName={props.recipientName}
-        nextName={props.nextName}
-        nextIsNewCycle={props.nextIsNewCycle}
         collected={s.collected}
         expected={s.expected}
         currency={props.currency}
+        paidCount={s.paid.length}
+        totalCount={props.payers.length}
+        nextName={props.nextName}
+        nextIsNewCycle={props.nextIsNewCycle}
       />
 
+      {complete && (
+        <div className="banner" role="status">
+          <span className="banner-icon">
+            <Icon name="check" size={18} />
+          </span>
+          <span>
+            Pot complete. Ready to send to <strong>{props.recipientName}</strong>.
+          </span>
+        </div>
+      )}
+
       <section className="card">
-        <h3>
-          Payments{" "}
-          <span className="muted count">
+        <div className="card-head">
+          <h3>Payments</h3>
+          <span className="count">
             {s.paid.length} of {props.payers.length} paid
           </span>
-        </h3>
+        </div>
         {props.notice}
-        {error && <p className="msg error" role="alert">{error}</p>}
         {props.payers.length === 0 ? (
-          <p className="muted">Nobody needs to pay this round.</p>
+          <p className="muted">Nobody needs to pay this week.</p>
         ) : (
           <div className="toggles">
-            {props.payers.map((p) => {
+            {props.payers.map((p, index) => {
               const isPaid = paidIds.has(p.id);
               return (
                 <button
@@ -119,8 +154,16 @@ export function RoundLive(props: LiveRoundProps) {
                   disabled={!hydrated}
                   onClick={() => toggle(p)}
                 >
-                  <span className="toggle-name">{p.name}</span>
-                  <span className="toggle-state">{isPaid ? "✓ Paid" : "Not paid"}</span>
+                  <Avatar name={p.name} tone={index} />
+                  <span className="toggle-body">
+                    <span className="toggle-name">{p.name}</span>
+                    <span className="toggle-state">
+                      {isPaid ? `Paid ${formatMoney(props.amount, props.currency)}` : "Not paid yet"}
+                    </span>
+                  </span>
+                  <span className="tick" aria-hidden="true">
+                    <Icon name="check" size={16} />
+                  </span>
                 </button>
               );
             })}
@@ -128,20 +171,36 @@ export function RoundLive(props: LiveRoundProps) {
         )}
       </section>
 
-      <section className="card">
-        <h3>Close this round</h3>
+      <div className="action-row">
+        <ShareSheet
+          message={message}
+          image={{
+            groupName: props.groupName,
+            week: props.round,
+            recipientName: props.recipientName,
+            collected: s.collected,
+            expected: s.expected,
+            currency: props.currency,
+            paidCount: s.paid.length,
+            totalCount: props.payers.length,
+            nextName: props.nextName,
+            unpaid: unpaidNames,
+          }}
+        />
         <CloseRoundForm
           round={props.round}
           recipient={props.recipientName}
-          unpaid={s.unpaid.map((p) => p.name)}
+          unpaid={unpaidNames}
           disabled={saving.length > 0}
+          action={props.actions?.closeRound}
         />
-      </section>
+      </div>
 
-      <section className="card">
-        <h3>WhatsApp update</h3>
-        <WhatsAppShare message={message} />
-      </section>
+      {error && (
+        <button type="button" className="toast" role="alert" onClick={() => setError(undefined)}>
+          {error}
+        </button>
+      )}
     </>
   );
 }
