@@ -45,10 +45,10 @@ describe("buildWhatsAppMessage", () => {
     ).toBe(
       [
         "*Test Group*",
-        "Round 3",
+        "Week 3",
         "",
         "Contribution: KSh 1,000 each",
-        "This round's pot goes to: *Agnes Wanjira*",
+        "This week's pot goes to: *Agnes Wanjira*",
         "",
         "✅ Paid (1)",
         "• Boniface Mutinda",
@@ -58,7 +58,7 @@ describe("buildWhatsAppMessage", () => {
         "• Brian Mutinda",
         "",
         "Collected: KSh 1,000 of KSh 3,000",
-        "Next round: Boniface Mutinda",
+        "Next week: Boniface Mutinda",
       ].join("\n"),
     );
   });

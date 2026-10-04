@@ -17,10 +17,10 @@ export function buildWhatsAppMessage(i: WhatsAppInput): string {
   const expected = (i.paid.length + i.unpaid.length) * i.amount;
   const lines: string[] = [
     `*${i.groupName}*`,
-    `Round ${i.round}`,
+    `Week ${i.round}`,
     "",
     `Contribution: ${money(i.amount)} each`,
-    `This round's pot goes to: *${i.recipientName ?? "—"}*`,
+    `This week's pot goes to: *${i.recipientName ?? "—"}*`,
     "",
   ];
 
@@ -34,6 +34,6 @@ export function buildWhatsAppMessage(i: WhatsAppInput): string {
   }
 
   lines.push(`Collected: ${money(collected)} of ${money(expected)}`);
-  if (i.nextName) lines.push(`Next round: ${i.nextName}`);
+  if (i.nextName) lines.push(`Next week: ${i.nextName}`);
   return lines.join("\n");
 }

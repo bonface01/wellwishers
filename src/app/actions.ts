@@ -57,7 +57,7 @@ export async function saveSettings(_: FormState, formData: FormData): Promise<Fo
 
   if (!name) return { error: "Group name is required." };
   if (!Number.isFinite(amount) || amount < 0) return { error: "Enter a valid contribution amount." };
-  if (!Number.isInteger(round) || round < 1) return { error: "Round number must be a whole number, 1 or higher." };
+  if (!Number.isInteger(round) || round < 1) return { error: "Week number must be a whole number, 1 or higher." };
 
   const group = await getGroup();
   const db = getDb();
@@ -141,7 +141,7 @@ export async function setPaid(memberId: number, paid: boolean): Promise<FormStat
   try {
     const s = await getRoundState();
     if (!s.payers.some((m) => m.id === memberId)) {
-      return { error: "This member does not pay this round. Reload the page." };
+      return { error: "This member does not pay this week. Reload the page." };
     }
     const db = getDb();
     if (paid) {
