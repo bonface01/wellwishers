@@ -14,11 +14,11 @@ import {
   login,
   removeMember,
   saveSettings,
-  setPaid,
   setReceived,
   startNewCycle,
   type FormState,
 } from "@/app/actions";
+import { useHydrated } from "@/lib/use-hydrated";
 
 function Msg({ state }: { state: FormState }) {
   if (state?.error) return <p className="msg error" role="alert">{state.error}</p>;
@@ -38,9 +38,11 @@ function ConfirmForm(props: {
   title: string;
   confirmLabel: string;
   danger?: boolean;
+  disabled?: boolean;
   hidden?: ReactNode;
   children: ReactNode;
 }) {
+  const hydrated = useHydrated();
   const dialogRef = useRef<HTMLDialogElement>(null);
   const close = () => dialogRef.current?.close();
   return (
@@ -50,6 +52,7 @@ function ConfirmForm(props: {
         type="button"
         className={props.triggerClassName}
         aria-label={props.triggerLabel}
+        disabled={!hydrated || props.disabled}
         onClick={() => dialogRef.current?.showModal()}
       >
         {props.trigger}
@@ -79,6 +82,7 @@ function ConfirmForm(props: {
 }
 
 export function LoginForm() {
+  const hydrated = useHydrated();
   const [state, action, pending] = useActionState(login, undefined);
   return (
     <form action={action} className="stack">
@@ -87,7 +91,7 @@ export function LoginForm() {
         <input type="password" name="password" autoComplete="current-password" required autoFocus />
       </label>
       <Msg state={state} />
-      <button className="btn primary" disabled={pending}>{pending ? "Signing in…" : "Sign in"}</button>
+      <button className="btn primary" disabled={pending || !hydrated}>{pending ? "Signing in…" : "Sign in"}</button>
     </form>
   );
 }
@@ -99,6 +103,7 @@ export function SettingsForm(props: {
   recipientPays: boolean;
   currentRound: number;
 }) {
+  const hydrated = useHydrated();
   const [state, action, pending] = useActionState(saveSettings, undefined);
   return (
     <form action={action} className="stack">
@@ -129,12 +134,13 @@ export function SettingsForm(props: {
         </small>
       </label>
       <Msg state={state} />
-      <button className="btn primary" disabled={pending}>{pending ? "Saving…" : "Save settings"}</button>
+      <button className="btn primary" disabled={pending || !hydrated}>{pending ? "Saving…" : "Save settings"}</button>
     </form>
   );
 }
 
 export function AddMemberForm() {
+  const hydrated = useHydrated();
   const formRef = useRef<HTMLFormElement>(null);
   const [state, action, pending] = useActionState(async (prev: FormState, fd: FormData) => {
     const result = await addMember(prev, fd);
@@ -154,7 +160,7 @@ export function AddMemberForm() {
         </label>
       </div>
       {state?.error && <Msg state={state} />}
-      <button className="btn primary" disabled={pending}>{pending ? "Adding…" : "Add member"}</button>
+      <button className="btn primary" disabled={pending || !hydrated}>{pending ? "Adding…" : "Add member"}</button>
     </form>
   );
 }
@@ -180,8 +186,10 @@ export function RemoveMemberButton({ id, name }: { id: number; name: string }) {
 }
 
 export function ReceivedToggle({ memberId, name, received }: { memberId: number; name: string; received: boolean }) {
+  const hydrated = useHydrated();
   const [optimistic, setOptimistic] = useOptimistic(received);
   const [error, setError] = useState<string>();
+  const busy = useRef(false);
   const [, startTransition] = useTransition();
   return (
     <div className="received">
@@ -190,14 +198,23 @@ export function ReceivedToggle({ memberId, name, received }: { memberId: number;
         className={`btn small ${optimistic ? "is-on" : ""}`}
         aria-pressed={optimistic}
         aria-label={`${name}: ${optimistic ? "already received this cycle" : "not received yet"}`}
-        onClick={() =>
+        disabled={!hydrated}
+        onClick={() => {
+          if (busy.current) return; // ignore taps while this member's save is in progress
+          busy.current = true;
           startTransition(async () => {
             setError(undefined);
             setOptimistic(!optimistic);
-            const result = await setReceived(memberId, !optimistic);
-            if (result?.error) setError(result.error);
-          })
-        }
+            try {
+              const result = await setReceived(memberId, !optimistic);
+              if (result?.error) setError(result.error);
+            } catch {
+              setError("Could not save. Please try again.");
+            } finally {
+              busy.current = false;
+            }
+          });
+        }}
       >
         {optimistic ? "✓ Received" : "Not received"}
       </button>
@@ -206,33 +223,13 @@ export function ReceivedToggle({ memberId, name, received }: { memberId: number;
   );
 }
 
-export function PaymentToggle({ memberId, name, paid }: { memberId: number; name: string; paid: boolean }) {
-  const [optimisticPaid, setOptimisticPaid] = useOptimistic(paid);
-  const [, startTransition] = useTransition();
-  return (
-    <button
-      type="button"
-      className={`toggle ${optimisticPaid ? "paid" : ""}`}
-      aria-pressed={optimisticPaid}
-      onClick={() =>
-        startTransition(async () => {
-          setOptimisticPaid(!optimisticPaid);
-          await setPaid(memberId, !optimisticPaid);
-        })
-      }
-    >
-      <span className="toggle-name">{name}</span>
-      <span className="toggle-state">{optimisticPaid ? "✓ Paid" : "Not paid"}</span>
-    </button>
-  );
-}
-
-export function CloseRoundForm(props: { round: number; recipient: string; unpaid: string[] }) {
+export function CloseRoundForm(props: { round: number; recipient: string; unpaid: string[]; disabled?: boolean }) {
   return (
     <ConfirmForm
       action={closeRound}
       trigger="Close round and pay out"
       triggerClassName="btn primary big"
+      disabled={props.disabled}
       title={`Close round ${props.round}?`}
       confirmLabel="Close and pay out"
       hidden={<input type="hidden" name="round" value={props.round} />}
@@ -269,6 +266,7 @@ export function NewCycleButton() {
 }
 
 export function WhatsAppShare({ message }: { message: string }) {
+  const hydrated = useHydrated();
   const preRef = useRef<HTMLPreElement>(null);
   const [status, setStatus] = useState<"idle" | "copied" | "manual">("idle");
 
@@ -302,7 +300,7 @@ export function WhatsAppShare({ message }: { message: string }) {
       <pre ref={preRef} className="wa-preview">{message}</pre>
       {status === "manual" && <p className="msg" role="status">Press and hold to copy</p>}
       <div className="row">
-        <button type="button" className="btn grow" onClick={copy}>{status === "copied" ? "Copied ✓" : "Copy"}</button>
+        <button type="button" className="btn grow" disabled={!hydrated} onClick={copy}>{status === "copied" ? "Copied ✓" : "Copy"}</button>
         <a
           className="btn primary grow"
           href={`https://wa.me/?text=${encodeURIComponent(message)}`}

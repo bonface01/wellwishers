@@ -1,9 +1,8 @@
 import Link from "next/link";
-import { CloseRoundForm, NewCycleButton, PaymentToggle, WhatsAppShare } from "@/components/forms";
-import { PotCard } from "@/components/PotCard";
+import { NewCycleButton } from "@/components/forms";
+import { RoundLive } from "@/components/RoundLive";
 import { getRoundState } from "@/lib/data";
 import { fullName } from "@/lib/names";
-import { buildWhatsAppMessage } from "@/lib/whatsapp";
 
 export default async function RoundPage() {
   const s = await getRoundState();
@@ -22,39 +21,23 @@ export default async function RoundPage() {
 
   return (
     <>
-      <PotCard s={s} />
-
-      <section className="card">
-        <h3>Payments</h3>
-        {s.group.amount === 0 && (
-          <p className="msg error">
-            Contribution amount is 0. Set it in <Link href="/admin/settings">Settings</Link>.
-          </p>
-        )}
-        {s.payers.length === 0 ? (
-          <p className="muted">Nobody needs to pay this round.</p>
-        ) : (
-          <div className="toggles">
-            {s.payers.map((m) => (
-              <PaymentToggle key={m.id} memberId={m.id} name={fullName(m)} paid={s.paidIds.has(m.id)} />
-            ))}
-          </div>
-        )}
-      </section>
-
-      <section className="card">
-        <h3>Close this round</h3>
-        <CloseRoundForm
-          round={s.group.currentRound}
-          recipient={fullName(s.recipient)}
-          unpaid={s.unpaid.map(fullName)}
-        />
-      </section>
-
-      <section className="card">
-        <h3>WhatsApp update</h3>
-        <WhatsAppShare message={buildWhatsAppMessage(s)} />
-      </section>
+      <RoundLive
+        groupName={s.group.name}
+        round={s.group.currentRound}
+        amount={s.group.amount}
+        currency={s.group.currency}
+        recipientName={fullName(s.recipient)}
+        nextName={s.next ? fullName(s.next) : null}
+        nextIsNewCycle={s.nextIsNewCycle}
+        payers={s.payers.map((m) => ({ id: m.id, name: fullName(m), paid: s.paidIds.has(m.id) }))}
+        notice={
+          s.group.amount === 0 ? (
+            <p className="msg error">
+              Contribution amount is 0. Set it in <Link href="/admin/settings">Settings</Link>.
+            </p>
+          ) : null
+        }
+      />
 
       <section className="card">
         <h3>Cycle</h3>

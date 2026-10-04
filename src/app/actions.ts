@@ -5,7 +5,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { getDb } from "@/db";
 import { groups, history, members, payments } from "@/db/schema";
-import { createSession, destroySession, passwordMatches, requireAdmin } from "@/lib/auth";
+import { createSession, destroySession, isAdmin, passwordMatches, requireAdmin } from "@/lib/auth";
 import { getGroup, getRoundState } from "@/lib/data";
 import { capitalizeName, fullName } from "@/lib/names";
 import {
@@ -135,22 +135,30 @@ export async function setReceived(memberId: number, received: boolean): Promise<
 
 // ---- Rounds ----
 
-export async function setPaid(memberId: number, paid: boolean) {
-  await requireAdmin();
-  const s = await getRoundState();
-  if (!s.payers.some((m) => m.id === memberId)) return;
-  const db = getDb();
-  if (paid) {
-    await db
-      .insert(payments)
-      .values({ round: s.group.currentRound, memberId })
-      .onConflictDoNothing();
-  } else {
-    await db
-      .delete(payments)
-      .where(and(eq(payments.round, s.group.currentRound), eq(payments.memberId, memberId)));
+// Returns an error instead of throwing so the UI can roll back its optimistic update and explain why.
+export async function setPaid(memberId: number, paid: boolean): Promise<FormState> {
+  if (!(await isAdmin())) return { error: "Your session has expired. Please sign in again." };
+  try {
+    const s = await getRoundState();
+    if (!s.payers.some((m) => m.id === memberId)) {
+      return { error: "This member does not pay this round. Reload the page." };
+    }
+    const db = getDb();
+    if (paid) {
+      await db
+        .insert(payments)
+        .values({ round: s.group.currentRound, memberId })
+        .onConflictDoNothing();
+    } else {
+      await db
+        .delete(payments)
+        .where(and(eq(payments.round, s.group.currentRound), eq(payments.memberId, memberId)));
+    }
+    refresh();
+    return { ok: true };
+  } catch {
+    return { error: "The server could not save it." };
   }
-  refresh();
 }
 
 export async function closeRound(formData: FormData) {

@@ -168,3 +168,8 @@ label.check input { width: 24px; height: 24px; accent-color: var(--accent); }
 .btn.is-on { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
 .hint { margin-bottom: 8px; font-size: 0.9rem; }
 .wa-preview { user-select: text; -webkit-user-select: text; }
+
+/* Not interactive yet (before the page has hydrated) or busy */
+.btn:disabled, .toggle:disabled { opacity: 0.55; cursor: progress; }
+.toggle[aria-busy="true"] { opacity: 0.85; }
+h3 .count { font-size: 0.85rem; font-weight: 400; margin-left: 6px; }
