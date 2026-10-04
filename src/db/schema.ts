@@ -47,7 +47,14 @@ export const payments = pgTable(
   (t) => [primaryKey({ columns: [t.round, t.memberId] })],
 );
 
-export const history = pgTable("history", {
+export const loginAttempts = pgTable("login_attempts", {
+  ip: text("ip").primaryKey(),
+  failedCount: integer("failed_count").notNull().default(0),
+  lastFailedAt: timestamp("last_failed_at", { withTimezone: true }).notNull().defaultNow(),
+  lockedUntil: timestamp("locked_until", { withTimezone: true }),
+});
+
+export const history =pgTable("history", {
   id: serial("id").primaryKey(),
   round: integer("round").notNull(),
   recipientName: text("recipient_name").notNull(),

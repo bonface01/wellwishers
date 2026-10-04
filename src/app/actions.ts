@@ -8,6 +8,13 @@ import { groups, history, members, payments } from "@/db/schema";
 import { createSession, destroySession, passwordMatches, requireAdmin } from "@/lib/auth";
 import { getGroup, getRoundState } from "@/lib/data";
 import { capitalizeName, fullName } from "@/lib/names";
+import {
+  clearFailedAttempts,
+  clientIp,
+  lockoutMessage,
+  lockoutMinutesLeft,
+  recordFailedAttempt,
+} from "@/lib/rate-limit";
 
 export type FormState = { error?: string; ok?: boolean } | undefined;
 
@@ -18,8 +25,16 @@ function refresh() {
 // ---- Session ----
 
 export async function login(_: FormState, formData: FormData): Promise<FormState> {
+  const ip = await clientIp();
+  const locked = await lockoutMinutesLeft(ip);
+  if (locked > 0) return { error: lockoutMessage(locked) };
+
   const password = String(formData.get("password") ?? "");
-  if (!passwordMatches(password)) return { error: "Incorrect password." };
+  if (!passwordMatches(password)) {
+    const nowLocked = await recordFailedAttempt(ip);
+    return { error: nowLocked > 0 ? lockoutMessage(nowLocked) : "Incorrect password." };
+  }
+  await clearFailedAttempts(ip);
   await createSession();
   redirect("/admin");
 }

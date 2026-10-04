@@ -16,6 +16,7 @@ Stack: Next.js (App Router) + TypeScript, Neon Postgres, Drizzle ORM, deployed o
 | `DATABASE_URL`   | Neon Postgres connection string                                         |
 | `ADMIN_PASSWORD` | Password for the finance person's login                                 |
 | `SESSION_SECRET` | Long random string used to sign the admin cookie (`openssl rand -hex 32`) |
+| `APP_TIMEZONE`   | Optional. IANA timezone for displayed round dates (default `Africa/Nairobi`) |
 
 Copy `.env.example` to `.env.local` and fill it in. Never commit real values.
 
@@ -47,3 +48,4 @@ Rerun `npm run db:migrate` whenever a new migration is added.
 - The group settings row is created automatically on first load.
 - "Close round and pay out" records the round in history, marks the recipient as received, clears payments and moves to the next round. When the last member in the cycle is paid out, the cycle resets automatically.
 - Removing a member deletes their current-round payment; past history is kept as-is.
+- Admin login is rate limited per IP: 5 failed attempts lock that IP out for 15 minutes. Attempts are stored in the `login_attempts` table, so it works across serverless instances. A successful login clears the counter.
