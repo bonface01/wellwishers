@@ -1,0 +1,49 @@
+# Contribution Circle
+
+A small web app for a WhatsApp savings group. Members each contribute a fixed amount per round to a finance person, who pays the whole pot to one member per round.
+
+- **Public page (`/`)** – read-only: this round's recipient, who has paid, payout order, past rounds. No login.
+- **Admin (`/admin`)** – for the finance person: settings, members, payment checklist, close round, WhatsApp update.
+
+**Payout order:** first-name initial (A–Z), then second-name initial, then full first name, then full second name. When everyone has received, a new cycle starts from the top.
+
+Stack: Next.js (App Router) + TypeScript, Neon Postgres, Drizzle ORM, deployed on Vercel.
+
+## Environment variables
+
+| Name             | Purpose                                                                 |
+| ---------------- | ----------------------------------------------------------------------- |
+| `DATABASE_URL`   | Neon Postgres connection string                                         |
+| `ADMIN_PASSWORD` | Password for the finance person's login                                 |
+| `SESSION_SECRET` | Long random string used to sign the admin cookie (`openssl rand -hex 32`) |
+
+Copy `.env.example` to `.env.local` and fill it in. Never commit real values.
+
+## Local development
+
+1. Create a free Neon database at <https://neon.tech> and copy its connection string.
+2. `npm install`
+3. `cp .env.example .env.local` and set the three variables.
+4. `npm run db:migrate` – applies the SQL migrations in `drizzle/`.
+5. `npm run dev` and open <http://localhost:3000> (admin at <http://localhost:3000/admin>).
+
+If you change `src/db/schema.ts`, run `npm run db:generate` to create a new migration, then `npm run db:migrate`.
+
+## Deploy to Vercel
+
+1. Push this project to a Git repository and import it in Vercel.
+2. In the Vercel project: **Storage → Create Database → Neon** (Marketplace). This adds `DATABASE_URL` automatically.
+3. In **Settings → Environment Variables**, add `ADMIN_PASSWORD` and `SESSION_SECRET`.
+4. Run the migrations once against the production database:
+   - `vercel env pull .env.local` (or paste the production `DATABASE_URL` into `.env.local`), then
+   - `npm run db:migrate`.
+5. Deploy. Share the site's root URL (`/`) with the group; the finance person signs in at `/admin`.
+
+Rerun `npm run db:migrate` whenever a new migration is added.
+
+## Notes
+
+- The database starts empty. The admin dashboard prompts you to add members and set the contribution amount.
+- The group settings row is created automatically on first load.
+- "Close round and pay out" records the round in history, marks the recipient as received, clears payments and moves to the next round. When the last member in the cycle is paid out, the cycle resets automatically.
+- Removing a member deletes their current-round payment; past history is kept as-is.
