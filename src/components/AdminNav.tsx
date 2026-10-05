@@ -8,6 +8,7 @@ import { Icon } from "./ui";
 const TABS = [
   { href: "/admin", label: "Week", icon: "round" },
   { href: "/admin/members", label: "Members", icon: "members" },
+  { href: "/admin/history", label: "History", icon: "history" },
   { href: "/admin/settings", label: "Settings", icon: "settings" },
 ] as const;
 

@@ -24,7 +24,7 @@ function Msg({ state }: { state: FormState }) {
  * A form whose submit is guarded by an in-page confirmation sheet (native <dialog>),
  * replacing window.confirm(). Large buttons, bottom sheet on phones.
  */
-function ConfirmForm(props: {
+export function ConfirmForm(props: {
   action: (formData: FormData) => void | Promise<void>;
   trigger: ReactNode;
   triggerClassName: string;

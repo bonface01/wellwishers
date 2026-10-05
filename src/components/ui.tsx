@@ -130,7 +130,7 @@ export function Ring({
   );
 }
 
-type IconName = "check" | "share" | "download" | "round" | "members" | "settings" | "whatsapp";
+type IconName = "check" | "share" | "download" | "round" | "members" | "settings" | "whatsapp" | "history" | "chevron" | "plus";
 
 const PATHS: Record<IconName, ReactNode> = {
   check: <path d="M5 12.5l4.5 4.5L19 7.5" />,
@@ -166,6 +166,20 @@ const PATHS: Record<IconName, ReactNode> = {
     <>
       <circle cx="12" cy="12" r="3" />
       <path d="M12 3v2.5M12 18.5V21M3 12h2.5M18.5 12H21M5.6 5.6l1.8 1.8M16.6 16.6l1.8 1.8M18.4 5.6l-1.8 1.8M7.4 16.6l-1.8 1.8" />
+    </>
+  ),
+  history: (
+    <>
+      <path d="M3.5 12a8.5 8.5 0 108.5-8.5A8.5 8.5 0 005.9 6L3.5 8.4" />
+      <path d="M3.5 3.8v4.6h4.6" />
+      <path d="M12 8v4.2l2.8 1.8" />
+    </>
+  ),
+  chevron: <path d="M9 5l7 7-7 7" />,
+  plus: (
+    <>
+      <path d="M12 5v14" />
+      <path d="M5 12h14" />
     </>
   ),
   whatsapp: (

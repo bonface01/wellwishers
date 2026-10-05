@@ -54,10 +54,27 @@ export const loginAttempts = pgTable("login_attempts", {
   lockedUntil: timestamp("locked_until", { withTimezone: true }),
 });
 
-export const history =pgTable("history", {
+export const history = pgTable("history", {
   id: serial("id").primaryKey(),
   round: integer("round").notNull(),
   recipientName: text("recipient_name").notNull(),
   amount: numeric("amount", { precision: 12, scale: 2 }).notNull(),
   date: timestamp("date", { withTimezone: true }).notNull().defaultNow(),
+  // Added later, so null on weeks closed before per-member payments were recorded.
+  contribution: numeric("contribution", { precision: 12, scale: 2 }), // amount each member paid that week
+  recipientPays: boolean("recipient_pays"), // whether the recipient also contributed that week
 });
+
+/** Who paid in a closed week. Names are kept so the record survives a member being removed later. */
+export const historyPayments = pgTable(
+  "history_payments",
+  {
+    id: serial("id").primaryKey(),
+    historyId: integer("history_id")
+      .notNull()
+      .references(() => history.id, { onDelete: "cascade" }),
+    memberId: integer("member_id").references(() => members.id, { onDelete: "set null" }),
+    memberName: text("member_name").notNull(),
+  },
+  (t) => [uniqueIndex("history_payments_week_member_unique").on(t.historyId, t.memberName)],
+);

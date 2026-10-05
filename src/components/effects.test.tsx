@@ -185,9 +185,19 @@ describe("AdminNav sliding highlight", () => {
     await at("/admin/members");
     expect(pill().style.getPropertyValue("--i")).toBe("1");
     await act(async () => { root.unmount(); });
-    await at("/admin/settings");
+    await at("/admin/history");
     expect(pill().style.getPropertyValue("--i")).toBe("2");
+    expect(container.querySelector("a.active")?.textContent).toBe("History");
+    await act(async () => { root.unmount(); });
+    await at("/admin/settings");
+    expect(pill().style.getPropertyValue("--i")).toBe("3");
     expect(container.querySelector("a.active")?.textContent).toBe("Settings");
+  });
+
+  it("keeps History highlighted while a week is open", async () => {
+    await at("/admin/history/3");
+    expect(container.querySelector("a.active")?.textContent).toBe("History");
+    expect(container.querySelectorAll(".tabbar a")).toHaveLength(4);
   });
 
   it("hides the highlight on routes outside the three tabs", async () => {

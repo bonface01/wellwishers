@@ -4,10 +4,18 @@ import { and, eq, sql } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { getDb } from "@/db";
-import { groups, history, members, payments } from "@/db/schema";
+import { groups, members, payments } from "@/db/schema";
 import { createSession, destroySession, isAdmin, passwordMatches, requireAdmin } from "@/lib/auth";
 import { getGroup, getRoundState } from "@/lib/data";
+import {
+  addWeekStatements,
+  closeWeekStatements,
+  nextHistoryId,
+  saveWeekStatements,
+} from "@/lib/history-db";
+import { getAddWeekData, getWeek } from "@/lib/history-data";
 import { capitalizeName, fullName } from "@/lib/names";
+import { buildChecklist, sanitizePaidNames, sundayPayoutAt, validateNewWeek } from "@/lib/week-edit";
 import {
   clearFailedAttempts,
   clientIp,
@@ -173,19 +181,102 @@ export async function closeRound(formData: FormData) {
   const waiting = s.order.filter((m) => !m.receivedThisCycle).length;
   const cycleEnds = waiting <= 1;
 
-  await db.batch([
-    db.insert(history).values({
+  // Keep who paid (not just the total), so a past week can be corrected later.
+  await db.batch(
+    closeWeekStatements(db, {
+      historyId: await nextHistoryId(db),
       round,
+      recipientId: s.recipient.id,
       recipientName: fullName(s.recipient),
-      amount: s.collected.toFixed(2),
+      contribution: s.group.amount,
+      recipientPays: s.group.recipientPays,
+      paid: s.paid.map((m) => ({ id: m.id, name: fullName(m) })),
+      cycleEnds,
     }),
-    cycleEnds
-      ? db.update(members).set({ receivedThisCycle: false })
-      : db.update(members).set({ receivedThisCycle: true }).where(eq(members.id, s.recipient.id)),
-    db.delete(payments).where(eq(payments.round, round)),
-    db.update(groups).set({ currentRound: round + 1 }).where(eq(groups.id, 1)),
-  ]);
+  );
   refresh();
+}
+
+// ---- Past weeks ----
+
+/** Correct who paid in a closed week. The week's total is recalculated from the ticks. */
+export async function saveWeek(_: FormState, formData: FormData): Promise<FormState> {
+  await requireAdmin();
+  const round = Number(formData.get("round"));
+  if (!Number.isInteger(round)) return { error: "Unknown week." };
+  const week = await getWeek(round);
+  if (!week) return { error: `Week ${round} was not found.` };
+
+  const names = sanitizePaidNames(
+    formData.getAll("paid").map(String),
+    week.checklist.map((r) => r.name),
+  );
+  const paid = names.map((name) => ({ id: week.checklist.find((r) => r.name === name)?.memberId ?? null, name }));
+
+  try {
+    const db = getDb();
+    await db.batch(
+      saveWeekStatements(db, {
+        historyId: week.row.id,
+        contribution: week.contribution,
+        recipientPays: week.recipientPays,
+        paid,
+      }),
+    );
+  } catch {
+    return { error: "Could not save, so nothing was changed. Please try again." };
+  }
+  refresh();
+  redirect(`/admin/history?saved=${round}`);
+}
+
+/** Add a past week that was never recorded in the app (weeks before it existed). */
+export async function addPastWeek(_: FormState, formData: FormData): Promise<FormState> {
+  await requireAdmin();
+  const data = await getAddWeekData();
+  const week = Number(formData.get("week"));
+  const date = String(formData.get("date") ?? "");
+  const recipient = data.members.find((m) => m.name === String(formData.get("recipient") ?? ""));
+
+  const problem = validateNewWeek({
+    week,
+    date,
+    recipientName: recipient?.name ?? null,
+    currentRound: data.group.currentRound,
+    existingRounds: data.existingRounds,
+  });
+  if (problem || !recipient) return { error: problem ?? "Choose who received that week's pot." };
+
+  const checklist = buildChecklist({
+    members: data.members,
+    saved: [],
+    recipientName: recipient.name,
+    recipientPays: data.group.recipientPays,
+  });
+  const names = sanitizePaidNames(
+    formData.getAll("paid").map(String),
+    checklist.map((r) => r.name),
+  );
+  const paid = names.map((name) => ({ id: checklist.find((r) => r.name === name)?.memberId ?? null, name }));
+
+  try {
+    const db = getDb();
+    await db.batch(
+      addWeekStatements(db, {
+        historyId: await nextHistoryId(db),
+        round: week,
+        date: sundayPayoutAt(date),
+        recipientName: recipient.name,
+        contribution: data.group.amount,
+        recipientPays: data.group.recipientPays,
+        paid,
+      }),
+    );
+  } catch {
+    return { error: "Could not add the week, so nothing was changed. Please try again." };
+  }
+  refresh();
+  redirect(`/admin/history?saved=${week}`);
 }
 
 export async function startNewCycle() {

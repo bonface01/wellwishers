@@ -471,11 +471,11 @@ label small { font-weight: 400; line-height: 1.4; }
 .tabbar {
   position: fixed; z-index: 10; left: 50%; transform: translateX(-50%);
   bottom: calc(12px + env(safe-area-inset-bottom)); width: min(520px, calc(100% - 24px));
-  display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; padding: 6px; border-radius: 999px;
+  display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; padding: 6px; border-radius: 999px;
 }
 .tab-pill {
   position: absolute; top: 6px; bottom: 6px; left: 6px; border-radius: 999px;
-  width: calc((100% - 12px - 8px) / 3);
+  width: calc((100% - 12px - 12px) / 4);
   background: var(--tab-pill); box-shadow: inset 0 1px 0 var(--glass-highlight);
   transform: translateX(calc(var(--i, 0) * (100% + 4px)));
   transition: transform 0.5s cubic-bezier(0.34, 1.35, 0.64, 1);
@@ -593,3 +593,55 @@ label small { font-weight: 400; line-height: 1.4; }
   .page-head h1, .round-head h1 { font-size: 1.75rem; }
   .action-row { gap: 8px; }
 }
+
+/* ═════════ History: tappable past weeks and the week editor ═════════ */
+.link-row {
+  position: relative; display: flex; align-items: center; gap: 14px; min-height: 68px; padding: 10px 14px;
+  color: var(--text); text-decoration: none;
+  background: var(--row-bg); border: 1px solid var(--row-border); border-radius: var(--r-row);
+  transition: background-color 0.25s ease, transform 0.12s ease;
+}
+.link-row:active { transform: scale(0.98); }
+.link-row .wk {
+  flex: none; display: grid; place-items: center; width: 44px; height: 44px; border-radius: 14px;
+  font-weight: 800; font-size: 0.95rem; background: var(--paid-tint); color: var(--success-text);
+}
+.link-row .lr-body { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.link-row .lr-title { font-weight: 700; overflow-wrap: anywhere; }
+.link-row .lr-sub { font-size: 0.8125rem; color: var(--muted); font-weight: 500; }
+.link-row .lr-amt { flex: none; text-align: right; font-weight: 800; font-variant-numeric: tabular-nums; }
+.link-row .lr-note { display: block; font-size: 0.75rem; font-weight: 600; color: var(--unpaid); }
+.link-row .icon { flex: none; color: var(--muted); }
+.history-list { display: flex; flex-direction: column; gap: 8px; }
+.banner.saved { background: var(--paid-tint); color: var(--text); border: 1px solid color-mix(in srgb, var(--success) 40%, transparent); box-shadow: none; }
+.banner.saved .banner-icon { background: var(--success); color: #fff; }
+.banner.saved::after { display: none; }
+
+.page-top { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; }
+.back { display: inline-flex; align-items: center; gap: 4px; min-height: 44px; font-weight: 700; text-decoration: none; }
+.back .icon { transform: rotate(180deg); }
+
+.week-summary .hero-collected { margin-top: 4px; }
+.field-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.field-grid .full { grid-column: 1 / -1; }
+select {
+  font: inherit; font-weight: 500; color: var(--text); background: var(--field);
+  border: 1px solid var(--row-border); border-radius: var(--r-btn); padding: 12px 14px; min-height: 52px; width: 100%;
+}
+input[type="date"] {
+  font: inherit; font-weight: 500; color: var(--text); background: var(--field);
+  border: 1px solid var(--row-border); border-radius: var(--r-btn); padding: 12px 14px; min-height: 52px; width: 100%;
+}
+select:focus-visible, input[type="date"]:focus-visible { outline: 3px solid var(--focus); outline-offset: 1px; }
+.tag.former { margin-left: 6px; }
+.note { font-size: 0.875rem; color: var(--muted); line-height: 1.45; }
+.change-list { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 6px; }
+.change-list li { display: flex; gap: 8px; align-items: baseline; font-size: 0.95rem; }
+.change-list .sign { flex: none; width: 20px; font-weight: 800; text-align: center; }
+.change-list .plus { color: var(--success-text); }
+.change-list .minus { color: var(--unpaid); }
+.sheet-lines { display: flex; flex-direction: column; gap: 6px; }
+.sheet-lines p { display: flex; justify-content: space-between; gap: 12px; }
+.sheet-lines strong { font-variant-numeric: tabular-nums; }
+.save-bar { display: flex; flex-direction: column; gap: 10px; }
+.save-bar .btn.wide { min-height: 56px; }
