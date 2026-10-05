@@ -15,7 +15,14 @@ import {
 } from "@/lib/history-db";
 import { getAddWeekData, getWeek } from "@/lib/history-data";
 import { capitalizeName, fullName } from "@/lib/names";
-import { buildChecklist, sanitizePaidNames, sundayPayoutAt, validateNewWeek } from "@/lib/week-edit";
+import {
+  buildChecklist,
+  isSunday,
+  sanitizePaidNames,
+  scheduleForWeek,
+  sundayPayoutAt,
+  validateNewWeek,
+} from "@/lib/week-edit";
 import {
   clearFailedAttempts,
   clientIp,
@@ -62,8 +69,11 @@ export async function saveSettings(_: FormState, formData: FormData): Promise<Fo
   const recipientPays = formData.get("recipientPays") === "on";
 
   const round = Number(formData.get("currentRound"));
+  const cycleStartRaw = String(formData.get("cycleStart") ?? "").trim();
+  const cycleStart = cycleStartRaw === "" ? null : cycleStartRaw;
 
   if (!name) return { error: "Group name is required." };
+  if (cycleStart !== null && !isSunday(cycleStart)) return { error: "The cycle start date must be a Sunday." };
   if (!Number.isFinite(amount) || amount < 0) return { error: "Enter a valid contribution amount." };
   if (!Number.isInteger(round) || round < 1) return { error: "Week number must be a whole number, 1 or higher." };
 
@@ -71,7 +81,7 @@ export async function saveSettings(_: FormState, formData: FormData): Promise<Fo
   const db = getDb();
   const update = db
     .update(groups)
-    .set({ name, currency, amount: amount.toFixed(2), recipientPays, currentRound: round })
+    .set({ name, currency, amount: amount.toFixed(2), recipientPays, currentRound: round, cycleStart })
     .where(eq(groups.id, 1));
 
   if (round !== group.currentRound) {
@@ -235,17 +245,19 @@ export async function addPastWeek(_: FormState, formData: FormData): Promise<For
   await requireAdmin();
   const data = await getAddWeekData();
   const week = Number(formData.get("week"));
-  const date = String(formData.get("date") ?? "");
-  const recipient = data.members.find((m) => m.name === String(formData.get("recipient") ?? ""));
+  const order = data.members.map((m) => m.name);
 
+  // The Sunday and the recipient are worked out from the cycle start date and the payout order, never typed in.
   const problem = validateNewWeek({
     week,
-    date,
-    recipientName: recipient?.name ?? null,
     currentRound: data.group.currentRound,
     existingRounds: data.existingRounds,
+    cycleStart: data.group.cycleStart,
+    order,
   });
-  if (problem || !recipient) return { error: problem ?? "Choose who received that week's pot." };
+  const schedule = scheduleForWeek(week, data.group.cycleStart, order);
+  const recipient = schedule ? data.members.find((m) => m.name === schedule.recipient) : undefined;
+  if (problem || !schedule || !recipient) return { error: problem ?? "Could not work out that week's date and recipient." };
 
   const checklist = buildChecklist({
     members: data.members,
@@ -265,7 +277,7 @@ export async function addPastWeek(_: FormState, formData: FormData): Promise<For
       addWeekStatements(db, {
         historyId: await nextHistoryId(db),
         round: week,
-        date: sundayPayoutAt(date),
+        date: sundayPayoutAt(schedule.date),
         recipientName: recipient.name,
         contribution: data.group.amount,
         recipientPays: data.group.recipientPays,

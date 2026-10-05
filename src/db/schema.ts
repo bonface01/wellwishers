@@ -1,5 +1,6 @@
 import {
   boolean,
+  date,
   integer,
   numeric,
   pgTable,
@@ -18,6 +19,8 @@ export const groups = pgTable("group", {
   currency: text("currency").notNull().default("KSh"),
   recipientPays: boolean("recipient_pays").notNull().default(true),
   currentRound: integer("current_round").notNull().default(1),
+  // The Sunday of week 1. Used to work out the date and recipient of past weeks added by hand. Optional.
+  cycleStart: date("cycle_start", { mode: "string" }),
 });
 
 export const members = pgTable(

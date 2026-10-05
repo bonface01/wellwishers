@@ -72,6 +72,7 @@ export async function getAddWeekData() {
   ]);
   return {
     group,
+    // In payout order: week N goes to the N-th name here (wrapping), starting on the cycle start Sunday.
     members: [...memberRows].sort(comparePayoutOrder).map((m) => ({ id: m.id, name: fullName(m) })),
     existingRounds: rounds.map((r) => r.round),
   };

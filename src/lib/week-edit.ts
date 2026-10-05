@@ -34,25 +34,58 @@ export function weekTotal(paidCount: number, contribution: number): number {
   return Math.round(paidCount * contribution * 100) / 100;
 }
 
+/** yyyy-mm-dd plus whole days, in UTC so daylight saving can never shift the date. */
+export function addDays(value: string, days: number): string {
+  const [y, mo, d] = value.split("-").map(Number);
+  return new Date(Date.UTC(y, mo - 1, d + days)).toISOString().slice(0, 10);
+}
+
+export type WeekSchedule = { date: string; recipient: string };
+
+/**
+ * The Sunday and the recipient of week N, worked out rather than typed in. `cycleStart` is the Sunday of week 1;
+ * week N falls (N − 1) weeks later and goes to the N-th person in the payout order, wrapping back to the top
+ * once everyone has received. Returns null when it cannot be worked out.
+ */
+export function scheduleForWeek(week: number, cycleStart: string | null, order: string[]): WeekSchedule | null {
+  if (!Number.isInteger(week) || week < 1) return null;
+  if (!cycleStart || !isSunday(cycleStart) || order.length === 0) return null;
+  return { date: addDays(cycleStart, 7 * (week - 1)), recipient: order[(week - 1) % order.length] };
+}
+
+/** Earlier weeks that are not in the history yet: 1 up to the week before the current one. */
+export function missingWeeks(currentRound: number, existingRounds: number[]): number[] {
+  const have = new Set(existingRounds);
+  const out: number[] = [];
+  for (let w = 1; w < currentRound; w++) if (!have.has(w)) out.push(w);
+  return out;
+}
+
+/** What has to be set up before a past week can be added at all, or null when it is ready. */
+export function setupProblem(cycleStart: string | null, memberCount: number): string | null {
+  if (memberCount === 0) return "Add the members first, so each week's recipient can be worked out from the order.";
+  if (!cycleStart) return "Set the cycle start date in Settings first. It is the Sunday of week 1, and each week's date and recipient are worked out from it.";
+  if (!isSunday(cycleStart)) return "The cycle start date in Settings must be a Sunday.";
+  return null;
+}
+
 export type NewWeekInput = {
   week: number;
-  date: string;
-  recipientName: string | null;
   currentRound: number;
   existingRounds: number[];
+  cycleStart: string | null;
+  order: string[];
 };
 
 /** Returns a human-readable problem, or null when the new week can be added. */
 export function validateNewWeek(i: NewWeekInput): string | null {
-  if (!Number.isInteger(i.week) || i.week < 1) return "Enter the week number as a whole number, 1 or higher.";
+  const setup = setupProblem(i.cycleStart, i.order.length);
+  if (setup) return setup;
+  if (!Number.isInteger(i.week) || i.week < 1) return "Choose the week number.";
   if (i.week >= i.currentRound) {
     return `Week ${i.week} is not in the past. The current week is ${i.currentRound}, so add weeks 1 to ${i.currentRound - 1}.`;
   }
   if (i.existingRounds.includes(i.week)) return `Week ${i.week} is already in the history. Open it from the list to correct it.`;
-  if (!i.date) return "Choose the Sunday date for that week.";
-  if (!isRealDate(i.date)) return "That date is not valid.";
-  if (!isSunday(i.date)) return "Weeks end on a Sunday. Choose a Sunday date.";
-  if (!i.recipientName) return "Choose who received that week's pot.";
   return null;
 }
 

@@ -16,6 +16,7 @@ export default async function SettingsPage() {
           currency={g.currency}
           recipientPays={g.recipientPays}
           currentRound={g.currentRound}
+          cycleStart={g.cycleStart}
         />
       </section>
     </>

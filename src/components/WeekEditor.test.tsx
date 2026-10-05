@@ -93,13 +93,15 @@ const edit = (over: Partial<EditWeekProps> = {}): EditWeekProps => ({
 
 const add = (over: Partial<AddWeekProps> = {}): AddWeekProps => ({
   mode: "add",
+  // In payout order. With the cycle starting Sunday 6 Sept: week 1 = Agnes, 2 = Bonface, 3 = Brian, 4 = Agnes again.
   members: [
     { id: 1, name: "Agnes Wanjira" },
     { id: 2, name: "Bonface Mutie" },
     { id: 3, name: "Brian Kithua" },
   ],
-  currentRound: 4,
-  existingRounds: [3],
+  currentRound: 5,
+  existingRounds: [3, 4],
+  cycleStart: "2026-09-06",
   amount: 100,
   currency: "KSh",
   recipientPays: false,
@@ -211,56 +213,82 @@ describe("WeekEditor: correcting a past week", () => {
 });
 
 describe("WeekEditor: adding a missing past week", () => {
-  const fill = async (week: string, date: string, recipient: string) => {
-    await type(container.querySelector("input[type=number]") as HTMLInputElement, week);
-    await type(container.querySelector("input[type=date]") as HTMLInputElement, date);
-    await type(container.querySelector("select") as HTMLSelectElement, recipient);
-  };
+  const pick = (value: string) => type(container.querySelector("select") as HTMLSelectElement, value);
+  const names = () => rows().map((r) => r.querySelector(".toggle-name")!.textContent);
+  const derived = () => (container.querySelector(".derived")?.textContent ?? "").replace(/\s+/g, " ");
 
-  it("starts empty with Save off", async () => {
+  it("only asks for the week number: there is no date or recipient field to fill in", async () => {
     await render(<WeekEditor {...add()} />);
+    expect(container.querySelectorAll("select")).toHaveLength(1);
+    expect(container.querySelector("input[type=date]")).toBeNull();
+    expect(container.querySelector("input[type=number]")).toBeNull();
+    expect(container.textContent).toContain("fill in automatically");
     expect(saveButton().disabled).toBe(true);
     expect(total()).toBe("0");
-    expect(q(".week-summary .hero-name").textContent).toBe("Choose a recipient");
+    expect(q(".week-summary .hero-name").textContent).toBe("Pick a week");
+  });
+
+  it("offers only the earlier weeks that are still missing", async () => {
+    await render(<WeekEditor {...add()} />);
+    const options = [...container.querySelectorAll("select option")].map((o) => o.textContent);
+    expect(options).toEqual(["Choose a week…", "Week 1", "Week 2"]); // 3 and 4 are already recorded, 5 is current
+  });
+
+  it("fills in the Sunday and the recipient from the cycle start and the order", async () => {
+    await render(<WeekEditor {...add()} />);
+    await pick("2");
+    expect(derived()).toContain("Sunday13 Sept 2026"); // 6 Sept + 1 week
+    expect(derived()).toContain("RecipientBonface Mutie"); // 2nd in the order
+    expect(q(".week-summary .hero-name").textContent).toBe("Bonface Mutie");
+    expect(q(".week-summary .hero-label").textContent).toContain("Week 2 · 13 Sept 2026");
+    expect(container.textContent).toContain("cycle start date (6 Sept 2026)");
+
+    await pick("1");
+    expect(derived()).toContain("Sunday6 Sept 2026");
+    expect(derived()).toContain("RecipientAgnes Wanjira");
+  });
+
+  it("wraps back to the top of the order once everyone has received, while the dates keep counting", async () => {
+    await render(<WeekEditor {...add({ currentRound: 6, existingRounds: [] })} />);
+    await pick("4"); // 4th week with 3 members: Agnes again, three weeks after the start
+    expect(derived()).toContain("Sunday27 Sept 2026");
+    expect(derived()).toContain("RecipientAgnes Wanjira");
   });
 
   it("leaves the recipient off the checklist when recipients do not contribute", async () => {
     await render(<WeekEditor {...add()} />);
-    await fill("2", "2026-09-13", "Agnes Wanjira");
-    expect(rows().map((r) => r.querySelector(".toggle-name")!.textContent)).toEqual(["Bonface Mutie", "Brian Kithua"]);
-    await type(container.querySelector("select") as HTMLSelectElement, "Bonface Mutie");
-    expect(rows().map((r) => r.querySelector(".toggle-name")!.textContent)).toEqual(["Agnes Wanjira", "Brian Kithua"]);
+    await pick("2"); // Bonface
+    expect(names()).toEqual(["Agnes Wanjira", "Brian Kithua"]);
+    await pick("1"); // Agnes
+    expect(names()).toEqual(["Bonface Mutie", "Brian Kithua"]);
   });
 
   it("includes the recipient when recipients do contribute", async () => {
     await render(<WeekEditor {...add({ recipientPays: true })} />);
-    await fill("2", "2026-09-13", "Agnes Wanjira");
+    await pick("2");
     expect(rows()).toHaveLength(3);
   });
 
-  it.each([
-    ["4", "2026-09-13", /not in the past/],
-    ["3", "2026-09-13", /already in the history/],
-    ["2", "2026-09-14", /Sunday/],
-    ["0", "2026-09-13", /whole number/],
-  ])("explains why week %s on %s cannot be added and keeps Save off", async (week, date, message) => {
+  it("keeps Save off until a week is chosen", async () => {
     await render(<WeekEditor {...add()} />);
-    await fill(week, date, "Agnes Wanjira");
-    expect(q(".card .msg.error").textContent).toMatch(message);
+    expect(saveButton().disabled).toBe(true);
+    await pick("2");
+    expect(saveButton().disabled).toBe(false);
+    await pick("");
     expect(saveButton().disabled).toBe(true);
   });
 
-  it("confirms, then submits the week, Sunday, recipient and ticked members", async () => {
+  it("confirms, then submits only the week and who paid", async () => {
     await render(<WeekEditor {...add()} />);
-    await fill("2", "2026-09-13", "Agnes Wanjira");
-    await tap(rows()[0]);
-    await tap(rows()[1]);
+    await pick("2");
+    await tap(rows()[0]); // Agnes
+    await tap(rows()[1]); // Brian
     expect(total()).toBe("200");
-    expect(saveButton().disabled).toBe(false);
 
     await tap(saveButton());
     expect(dialog().getAttribute("aria-label")).toBe("Add week 2?");
-    expect(dialog().textContent).toContain("Agnes Wanjira");
+    expect(dialog().textContent).toContain("13 Sept 2026");
+    expect(dialog().textContent).toContain("Bonface Mutie");
     expect(dialog().textContent).toContain("KSh 200");
     expect(action).not.toHaveBeenCalled();
 
@@ -268,22 +296,46 @@ describe("WeekEditor: adding a missing past week", () => {
     await flush();
     const fd = submitted[0];
     expect(fd.get("week")).toBe("2");
-    expect(fd.get("date")).toBe("2026-09-13");
-    expect(fd.get("recipient")).toBe("Agnes Wanjira");
-    expect(fd.getAll("paid").sort()).toEqual(["Bonface Mutie", "Brian Kithua"]);
+    expect(fd.getAll("paid").sort()).toEqual(["Agnes Wanjira", "Brian Kithua"]);
+    // The server works the date and recipient out itself, so none is sent from the browser.
+    expect(fd.has("date")).toBe(false);
+    expect(fd.has("recipient")).toBe(false);
   });
 
-  it("does not send someone who stopped being eligible after the recipient changed", async () => {
+  it("does not send someone who stopped being eligible after the week changed", async () => {
     await render(<WeekEditor {...add()} />);
-    await fill("2", "2026-09-13", "Agnes Wanjira");
+    await pick("1"); // Agnes receives, so Bonface and Brian can be ticked
     await tap(rows()[0]); // Bonface
     await tap(rows()[1]); // Brian
-    await type(container.querySelector("select") as HTMLSelectElement, "Bonface Mutie"); // Bonface becomes the recipient
-    expect(total()).toBe("100"); // only Brian still counts
+    expect(total()).toBe("200");
+    await pick("2"); // now Bonface receives and drops off the checklist
+    expect(names()).toEqual(["Agnes Wanjira", "Brian Kithua"]);
+    expect(total()).toBe("100"); // only Brian, who is still on the list and was ticked, counts
+
     await tap(saveButton());
     await tap([...dialog().querySelectorAll<HTMLButtonElement>("button[type=submit]")][0]);
     await flush();
     expect(submitted[0].getAll("paid")).toEqual(["Brian Kithua"]);
+  });
+
+  it("asks for the cycle start date first when it has not been set", async () => {
+    await render(<WeekEditor {...add({ cycleStart: null })} />);
+    expect(container.querySelector("select")).toBeNull();
+    expect(container.textContent).toContain("Set the cycle start date in Settings first");
+    expect(q("a[href='/admin/settings']")).not.toBeNull();
+    expect(container.querySelector("[data-action=save-week]")).toBeNull();
+  });
+
+  it("asks for members first when there are none", async () => {
+    await render(<WeekEditor {...add({ members: [] })} />);
+    expect(container.textContent).toContain("Add the members first");
+    expect(container.querySelector("a[href='/admin/settings']")).toBeNull();
+  });
+
+  it("says so when every earlier week is already recorded", async () => {
+    await render(<WeekEditor {...add({ existingRounds: [1, 2, 3, 4] })} />);
+    expect(container.textContent).toContain("Every earlier week is already in the history");
+    expect(container.querySelector("select")).toBeNull();
   });
 });
 

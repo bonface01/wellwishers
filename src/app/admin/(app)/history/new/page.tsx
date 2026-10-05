@@ -22,6 +22,7 @@ export default async function AddWeekPage() {
           members={data.members}
           currentRound={data.group.currentRound}
           existingRounds={data.existingRounds}
+          cycleStart={data.group.cycleStart}
           amount={data.group.amount}
           currency={data.group.currency}
           recipientPays={data.group.recipientPays}

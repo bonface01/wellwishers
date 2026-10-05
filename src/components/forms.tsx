@@ -88,6 +88,7 @@ export function SettingsForm(props: {
   currency: string;
   recipientPays: boolean;
   currentRound: number;
+  cycleStart: string | null;
 }) {
   const hydrated = useHydrated();
   const [state, action, pending] = useActionState(saveSettings, undefined);
@@ -117,6 +118,14 @@ export function SettingsForm(props: {
         <small className="muted">
           Joining a group that is already running? Set the week you are on. Changing this clears the
           payment checklist. Then mark who has already received on the Members tab.
+        </small>
+      </label>
+      <label>
+        Cycle start date
+        <input name="cycleStart" type="date" defaultValue={props.cycleStart ?? ""} />
+        <small className="muted">
+          The Sunday of week 1. When you add a missing past week, its Sunday and recipient are worked out from
+          this date and the payout order. Leave empty if you never need to add past weeks.
         </small>
       </label>
       <Msg state={state} />

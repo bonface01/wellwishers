@@ -47,8 +47,7 @@ describe("migration 0003: per-member payments for closed weeks", () => {
     await pg.close();
   });
 
-  it("is the newest migration and only adds things", () => {
-    expect(files[files.length - 1]).toBe(NEW_MIGRATION);
+  it("only adds things", () => {
     const sql = readFileSync(join(DIR, NEW_MIGRATION), "utf8").toUpperCase();
     // No dropping, renaming, rewriting or deleting existing data ("ON DELETE CASCADE" on a new foreign key is fine).
     expect(sql).not.toMatch(/\bDROP\b|\bTRUNCATE\b|ALTER COLUMN|RENAME|(^|;)\s*(DELETE\s+FROM|UPDATE)\b/);
@@ -96,5 +95,52 @@ describe("migration 0003: per-member payments for closed weeks", () => {
     const week = (await pg.query("select id from history where round = 2")).rows[0] as { id: number };
     await pg.exec(`delete from history where id = ${week.id}`);
     expect((await pg.query("select count(*)::int as n from history_payments")).rows[0]).toEqual({ n: 0 });
+  });
+});
+
+describe("migration 0004: optional cycle start date", () => {
+  const CYCLE_MIGRATION = files.find((f) => f.startsWith("0004_"))!;
+  let pg: PGlite;
+  let before: unknown;
+
+  const snapshot = async () => ({
+    group: (await pg.query('select id, name, amount, currency, recipient_pays, current_round from "group"')).rows,
+    members: (await pg.query("select * from members order by id")).rows,
+    history: (await pg.query("select * from history order by id")).rows,
+    historyPayments: (await pg.query("select * from history_payments order by id")).rows,
+  });
+
+  beforeAll(async () => {
+    pg = new PGlite();
+    for (const f of files.filter((f) => f < CYCLE_MIGRATION)) await apply(pg, f);
+    await pg.exec(`
+      insert into "group" (id, name, amount, currency, recipient_pays, current_round) values (1, 'Real Group', 100, 'KSh', false, 4);
+      insert into members (first_name, second_name, received_this_cycle) values ('Agnes','Wanjira',true), ('Bonface','Mutie',false);
+      insert into history (id, round, recipient_name, amount, date, contribution, recipient_pays) values (1, 3, 'Agnes Wanjira', 100.00, '2026-10-04T15:00:00Z', 100.00, false);
+      insert into history_payments (history_id, member_id, member_name) values (1, 2, 'Bonface Mutie');
+    `);
+    before = await snapshot();
+    await apply(pg, CYCLE_MIGRATION);
+  });
+
+  afterAll(async () => {
+    await pg.close();
+  });
+
+  it("only adds a nullable column", () => {
+    const sql = readFileSync(join(DIR, CYCLE_MIGRATION), "utf8").toUpperCase();
+    expect(sql).toMatch(/ALTER TABLE "GROUP" ADD COLUMN "CYCLE_START" DATE;?\s*$/);
+    expect(sql).not.toMatch(/\bDROP\b|\bTRUNCATE\b|ALTER COLUMN|RENAME|NOT NULL|(^|;)\s*(DELETE\s+FROM|UPDATE)\b/);
+  });
+
+  it("leaves every existing row exactly as it was, with the new setting empty", async () => {
+    expect(await snapshot()).toEqual(before);
+    expect((await pg.query('select cycle_start from "group"')).rows).toEqual([{ cycle_start: null }]);
+  });
+
+  it("stores a plain date that reads back unchanged", async () => {
+    await pg.exec(`update "group" set cycle_start = '2026-09-13'`);
+    const r = (await pg.query(`select to_char(cycle_start, 'YYYY-MM-DD') as d from "group"`)).rows[0];
+    expect(r).toEqual({ d: "2026-09-13" });
   });
 });

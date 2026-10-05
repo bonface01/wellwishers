@@ -645,3 +645,9 @@ select:focus-visible, input[type="date"]:focus-visible { outline: 3px solid var(
 .sheet-lines strong { font-variant-numeric: tabular-nums; }
 .save-bar { display: flex; flex-direction: column; gap: 10px; }
 .save-bar .btn.wide { min-height: 56px; }
+
+/* Worked-out values (read-only): the Sunday and recipient of the chosen week */
+.derived { display: flex; flex-direction: column; gap: 8px; padding: 12px 14px; border-radius: var(--r-row); background: var(--row-bg); border: 1px solid var(--row-border); }
+.derived p { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
+.derived span { color: var(--muted); font-size: 0.875rem; font-weight: 600; }
+.derived strong { text-align: right; overflow-wrap: anywhere; }
