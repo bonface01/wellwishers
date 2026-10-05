@@ -95,6 +95,7 @@
     --unpaid: #ebbd74;
     --paid-tint: rgba(63, 203, 138, 0.11);
     --danger: #ffa8a0;
+  --danger-btn-text: #3a0c08;
     --dark-btn: #1b3a30;
     --toast-bg: #e9f0eb;
     --toast-text: #10201a;
@@ -146,6 +147,7 @@
   --unpaid: #ebbd74;
   --paid-tint: rgba(63, 203, 138, 0.11);
   --danger: #ffa8a0;
+  --danger-btn-text: #3a0c08;
   --dark-btn: #1b3a30;
   --toast-bg: #e9f0eb;
   --toast-text: #10201a;
@@ -407,7 +409,7 @@ html[data-tab-hidden="true"] .orb { animation-play-state: paused; }
 .btn.primary, .btn.green { background: var(--btn-green); color: var(--btn-green-text); border-color: transparent; }
 .btn.dark { background: var(--dark-btn); color: var(--dark-btn-text); border-color: rgba(255, 255, 255, 0.1); }
 .btn.danger { color: var(--danger); }
-.btn.danger-solid { background: var(--danger); color: #fff; border-color: transparent; }
+.btn.danger-solid { background: var(--danger); color: var(--danger-btn-text, #fff); border-color: transparent; }
 .btn.small { min-height: 44px; padding: 8px 14px; font-size: 0.9rem; }
 .btn.wide { width: 100%; }
 .btn.ghost { background: transparent; border-color: transparent; color: var(--muted); }
@@ -651,3 +653,13 @@ select:focus-visible, input[type="date"]:focus-visible { outline: 3px solid var(
 .derived p { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
 .derived span { color: var(--muted); font-size: 0.875rem; font-weight: 600; }
 .derived strong { text-align: right; overflow-wrap: anywhere; }
+
+/* Schedule rows: name over "Week N · Sun D", with the status on the right */
+.timeline .tl-body { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.timeline .tl-body .tl-name { flex: none; }
+.timeline .tl-sub { font-size: 0.8125rem; font-weight: 600; color: var(--muted); font-variant-numeric: tabular-nums; }
+.timeline li.current .tl-sub { color: var(--text); }
+.timeline li.received .tl-sub { font-weight: 500; }
+.prompt { border-color: color-mix(in srgb, var(--amber) 55%, transparent); }
+.prompt h3 { margin-bottom: 6px; }
+.prompt .note { margin-bottom: 12px; }

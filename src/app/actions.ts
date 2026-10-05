@@ -8,21 +8,14 @@ import { groups, members, payments } from "@/db/schema";
 import { createSession, destroySession, isAdmin, passwordMatches, requireAdmin } from "@/lib/auth";
 import { getGroup, getRoundState } from "@/lib/data";
 import {
-  addWeekStatements,
   closeWeekStatements,
+  deleteWeekStatements,
   nextHistoryId,
+  recordWeekStatements,
   saveWeekStatements,
 } from "@/lib/history-db";
 import { getAddWeekData, getWeek } from "@/lib/history-data";
-import { capitalizeName, fullName } from "@/lib/names";
-import {
-  buildChecklist,
-  isSunday,
-  sanitizePaidNames,
-  scheduleForWeek,
-  sundayPayoutAt,
-  validateNewWeek,
-} from "@/lib/week-edit";
+import { comparePayoutOrder, capitalizeName, fullName } from "@/lib/names";
 import {
   clearFailedAttempts,
   clientIp,
@@ -30,6 +23,8 @@ import {
   lockoutMinutesLeft,
   recordFailedAttempt,
 } from "@/lib/rate-limit";
+import { joinedCycleForNewMember, nairobiToday, orderForCycle, scheduleForWeek } from "@/lib/schedule";
+import { buildChecklist, isSunday, sanitizePaidNames, sundayPayoutAt, validateNewWeek } from "@/lib/week-edit";
 
 export type FormState = { error?: string; ok?: boolean } | undefined;
 
@@ -68,16 +63,19 @@ export async function saveSettings(_: FormState, formData: FormData): Promise<Fo
   const amount = Number(formData.get("amount"));
   const recipientPays = formData.get("recipientPays") === "on";
 
-  const round = Number(formData.get("currentRound"));
+  // The week number is only sent while no cycle start date is set. Once it is, the week follows the date.
+  const roundField = formData.get("currentRound");
   const cycleStartRaw = String(formData.get("cycleStart") ?? "").trim();
   const cycleStart = cycleStartRaw === "" ? null : cycleStartRaw;
 
   if (!name) return { error: "Group name is required." };
   if (cycleStart !== null && !isSunday(cycleStart)) return { error: "The cycle start date must be a Sunday." };
   if (!Number.isFinite(amount) || amount < 0) return { error: "Enter a valid contribution amount." };
-  if (!Number.isInteger(round) || round < 1) return { error: "Week number must be a whole number, 1 or higher." };
 
   const group = await getGroup();
+  const round = roundField === null ? group.currentRound : Number(roundField);
+  if (!Number.isInteger(round) || round < 1) return { error: "Week number must be a whole number, 1 or higher." };
+
   const db = getDb();
   const update = db
     .update(groups)
@@ -114,7 +112,17 @@ export async function addMember(_: FormState, formData: FormData): Promise<FormS
     );
   if (dup) return { error: `${firstName} ${secondName} is already a member.` };
 
-  await db.insert(members).values({ firstName, secondName });
+  // The order is locked for the running cycle: a member added mid-cycle joins from the next cycle, so nobody
+  // already in the order moves. Before the first cycle starts (or with no start date) they join cycle 1.
+  const group = await getGroup();
+  const existing = [...(await db.select().from(members))].sort(comparePayoutOrder);
+  const joinedCycle = joinedCycleForNewMember(
+    nairobiToday(),
+    group.cycleStart,
+    existing.map((m) => ({ id: m.id, name: fullName(m), joinedCycle: m.joinedCycle })),
+  );
+
+  await db.insert(members).values({ firstName, secondName, joinedCycle });
   refresh();
   return { ok: true };
 }
@@ -134,7 +142,7 @@ export async function removeMember(formData: FormData) {
   refresh();
 }
 
-// Used to set up a group that is already part-way through a cycle.
+// Used to set up a group that is already part-way through a cycle (only while no cycle start date is set).
 export async function setReceived(memberId: number, received: boolean): Promise<FormState> {
   await requireAdmin();
   const db = getDb();
@@ -179,19 +187,38 @@ export async function setPaid(memberId: number, paid: boolean): Promise<FormStat
   }
 }
 
+/** Close the current week: confirm the payout and save who paid. */
 export async function closeRound(formData: FormData) {
   await requireAdmin();
   const s = await getRoundState();
-  // Ignore stale or double submissions for a round that has already been closed.
+  // Ignore stale or double submissions for a week that has already been closed.
   if (Number(formData.get("round")) !== s.group.currentRound) return;
   if (!s.recipient) return;
 
   const db = getDb();
   const round = s.group.currentRound;
-  const waiting = s.order.filter((m) => !m.receivedThisCycle).length;
-  const cycleEnds = waiting <= 1;
+  const paid = s.paid.map((m) => ({ id: m.id, name: fullName(m) }));
 
-  // Keep who paid (not just the total), so a past week can be corrected later.
+  if (s.mode === "schedule") {
+    // The date and the order already decide the week and who has received, so closing only records the week.
+    if (s.closed || !s.currentDate) return;
+    await db.batch(
+      recordWeekStatements(db, {
+        historyId: await nextHistoryId(db),
+        round,
+        date: sundayPayoutAt(s.currentDate),
+        recipientName: fullName(s.recipient),
+        contribution: s.group.amount,
+        recipientPays: s.group.recipientPays,
+        paid,
+      }),
+    );
+    refresh();
+    return;
+  }
+
+  // Legacy (no cycle start date yet): record the week, mark the recipient, clear the checklist and move on.
+  const waiting = s.order.filter((m) => !m.receivedThisCycle).length;
   await db.batch(
     closeWeekStatements(db, {
       historyId: await nextHistoryId(db),
@@ -200,8 +227,8 @@ export async function closeRound(formData: FormData) {
       recipientName: fullName(s.recipient),
       contribution: s.group.amount,
       recipientPays: s.group.recipientPays,
-      paid: s.paid.map((m) => ({ id: m.id, name: fullName(m) })),
-      cycleEnds,
+      paid,
+      cycleEnds: waiting <= 1,
     }),
   );
   refresh();
@@ -240,29 +267,45 @@ export async function saveWeek(_: FormState, formData: FormData): Promise<FormSt
   redirect(`/admin/history?saved=${round}`);
 }
 
-/** Add a past week that was never recorded in the app (weeks before it existed). */
+/** Delete a recorded week (for example one entered wrongly), so it can be added again properly. */
+export async function deleteWeek(formData: FormData) {
+  await requireAdmin();
+  const round = Number(formData.get("round"));
+  if (!Number.isInteger(round)) redirect("/admin/history");
+  const week = await getWeek(round);
+  if (!week) redirect("/admin/history");
+
+  try {
+    const db = getDb();
+    await db.batch(deleteWeekStatements(db, week.row.id));
+  } catch {
+    redirect(`/admin/history?error=delete-${round}`);
+  }
+  refresh();
+  redirect(`/admin/history?deleted=${round}`);
+}
+
+/** Add a past week that was never recorded in the app. Its Sunday and recipient come from the schedule. */
 export async function addPastWeek(_: FormState, formData: FormData): Promise<FormState> {
   await requireAdmin();
   const data = await getAddWeekData();
   const week = Number(formData.get("week"));
-  const order = data.members.map((m) => m.name);
 
-  // The Sunday and the recipient are worked out from the cycle start date and the payout order, never typed in.
   const problem = validateNewWeek({
     week,
-    currentRound: data.group.currentRound,
+    currentRound: data.currentRound,
     existingRounds: data.existingRounds,
     cycleStart: data.group.cycleStart,
-    order,
+    memberCount: data.members.length,
   });
-  const schedule = scheduleForWeek(week, data.group.cycleStart, order);
-  const recipient = schedule ? data.members.find((m) => m.name === schedule.recipient) : undefined;
-  if (problem || !schedule || !recipient) return { error: problem ?? "Could not work out that week's date and recipient." };
+  const schedule = scheduleForWeek(week, data.group.cycleStart, data.members);
+  if (problem || !schedule) return { error: problem ?? "Could not work out that week's date and recipient." };
 
+  // Only the members of that week's cycle could have paid (someone who joined later was not in it).
   const checklist = buildChecklist({
-    members: data.members,
+    members: orderForCycle(data.members, schedule.cycle).map((m) => ({ id: m.id, name: m.name })),
     saved: [],
-    recipientName: recipient.name,
+    recipientName: schedule.recipient.name,
     recipientPays: data.group.recipientPays,
   });
   const names = sanitizePaidNames(
@@ -274,11 +317,11 @@ export async function addPastWeek(_: FormState, formData: FormData): Promise<For
   try {
     const db = getDb();
     await db.batch(
-      addWeekStatements(db, {
+      recordWeekStatements(db, {
         historyId: await nextHistoryId(db),
         round: week,
         date: sundayPayoutAt(schedule.date),
-        recipientName: recipient.name,
+        recipientName: schedule.recipient.name,
         contribution: data.group.amount,
         recipientPays: data.group.recipientPays,
         paid,

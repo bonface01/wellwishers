@@ -2,14 +2,14 @@
 
 import Link from "next/link";
 import { useActionState, useState } from "react";
-import { addPastWeek, saveWeek, type FormState } from "@/app/actions";
+import { addPastWeek, deleteWeek, saveWeek, type FormState } from "@/app/actions";
 import { formatDate, formatMoney } from "@/lib/format";
+import { orderForCycle, scheduleForWeek, type SMember } from "@/lib/schedule";
 import { useHydrated } from "@/lib/use-hydrated";
 import {
   buildChecklist,
   diffPaid,
   missingWeeks,
-  scheduleForWeek,
   setupProblem,
   validateNewWeek,
   weekTotal,
@@ -39,16 +39,21 @@ export type EditWeekProps = Common & {
   savedTotal: number;
   /** False for weeks saved before per-member payments were kept. */
   tracked: boolean;
+  /** Defaults to the real server action. Overridden only by the offline design preview and tests. */
+  deleteAction?: (formData: FormData) => void | Promise<void>;
 };
 
 export type AddWeekProps = Common & {
   mode: "add";
-  /** Current members, in payout order. */
-  members: { id: number; name: string }[];
+  /** Current members, in payout order, each with the first cycle they take part in. */
+  members: SMember[];
+  /** The week the group is in today. Only earlier weeks can be added. */
   currentRound: number;
   existingRounds: number[];
   /** The Sunday of week 1 (from Settings), or null when it has not been set. */
   cycleStart: string | null;
+  /** Names already ticked on the live checklist for a week that was never closed, keyed by week. */
+  pending?: Record<number, string[]>;
 };
 
 export type WeekEditorProps = EditWeekProps | AddWeekProps;
@@ -58,7 +63,7 @@ const longDate = (iso: string) => formatDate(new Date(`${iso}T12:00:00Z`));
 /**
  * One checklist for correcting a closed week or adding a missing one. Ticking updates the total straight away;
  * nothing is saved until the admin confirms. When adding, the admin only picks the week number: its Sunday and
- * its recipient are worked out from the cycle start date and the payout order.
+ * its recipient come from the schedule (cycle start date and the order of that week's cycle).
  */
 export function WeekEditor(props: WeekEditorProps) {
   const hydrated = useHydrated();
@@ -66,9 +71,8 @@ export function WeekEditor(props: WeekEditorProps) {
   const [state, formAction] = useActionState(props.action ?? (edit ? saveWeek : addPastWeek), undefined);
   const [week, setWeek] = useState("");
 
-  // What this form is about: the stored week (edit) or the worked-out week (add).
-  const order = props.mode === "add" ? props.members.map((m) => m.name) : [];
-  const schedule = props.mode === "add" && week ? scheduleForWeek(Number(week), props.cycleStart, order) : null;
+  const members = props.mode === "add" ? props.members : [];
+  const schedule = props.mode === "add" && week ? scheduleForWeek(Number(week), props.cycleStart, members) : null;
   const issue =
     props.mode === "add" && week
       ? validateNewWeek({
@@ -76,19 +80,22 @@ export function WeekEditor(props: WeekEditorProps) {
           currentRound: props.currentRound,
           existingRounds: props.existingRounds,
           cycleStart: props.cycleStart,
-          order,
+          memberCount: members.length,
         })
       : null;
 
   const rows: ChecklistRow[] =
     props.mode === "edit"
       ? props.rows
-      : buildChecklist({
-          members: props.members,
-          saved: [],
-          recipientName: schedule?.recipient ?? null,
-          recipientPays: props.recipientPays,
-        });
+      : schedule
+        ? buildChecklist({
+            // Only the members of that week's cycle could have paid: someone who joined later was not in it.
+            members: orderForCycle(members, schedule.cycle).map((m) => ({ id: m.id, name: m.name })),
+            saved: [],
+            recipientName: schedule.recipient.name,
+            recipientPays: props.recipientPays,
+          })
+        : [];
 
   const [initial] = useState<Set<string>>(
     () => new Set(props.mode === "edit" ? props.rows.filter((r) => r.paid).map((r) => r.name) : []),
@@ -122,7 +129,13 @@ export function WeekEditor(props: WeekEditorProps) {
   const canSave = props.mode === "edit" ? !props.tracked || changed : schedule !== null && issue === null;
   const weekNumber = props.mode === "edit" ? props.week : Number(week) || null;
   const dateLabel = props.mode === "edit" ? props.dateLabel : schedule ? longDate(schedule.date) : "—";
-  const recipientName = props.mode === "edit" ? props.recipientName : (schedule?.recipient ?? null);
+  const recipientName = props.mode === "edit" ? props.recipientName : (schedule?.recipient.name ?? null);
+
+  function chooseWeek(value: string) {
+    setWeek(value);
+    // Keep any ticks already entered on the live checklist for that week.
+    if (props.mode === "add") setPaid(new Set(props.pending?.[Number(value)] ?? []));
+  }
 
   function toggle(name: string) {
     setPaid((cur) => {
@@ -133,7 +146,7 @@ export function WeekEditor(props: WeekEditorProps) {
     });
   }
 
-  // The date and recipient are not sent: the server works them out again from its own copy of the settings.
+  // The date and recipient are not sent: the server works them out again from its own copy of the schedule.
   const hidden = (
     <>
       {props.mode === "edit" ? (
@@ -154,7 +167,7 @@ export function WeekEditor(props: WeekEditorProps) {
           <div className="stack">
             <label>
               Week number
-              <select value={week} onChange={(e) => setWeek(e.target.value)}>
+              <select value={week} onChange={(e) => chooseWeek(e.target.value)}>
                 <option value="">Choose a week…</option>
                 {available.map((w) => (
                   <option key={w} value={w}>
@@ -171,7 +184,7 @@ export function WeekEditor(props: WeekEditorProps) {
                 </p>
                 <p>
                   <span>Recipient</span>
-                  <strong>{schedule.recipient}</strong>
+                  <strong>{schedule.recipient.name}</strong>
                 </p>
               </div>
             ) : (
@@ -186,6 +199,7 @@ export function WeekEditor(props: WeekEditorProps) {
               <p className="note">
                 Worked out from the cycle start date ({longDate(props.cycleStart)}) and the payout order. Each member paid{" "}
                 {formatMoney(props.amount, props.currency)}.
+                {props.pending?.[Number(week)] && " The ticks already entered for this week are kept."}
               </p>
             )}
           </div>
@@ -317,6 +331,27 @@ export function WeekEditor(props: WeekEditorProps) {
             <p className="note">The total is recalculated from the ticks, so it replaces the one saved before.</p>
           )}
         </ConfirmForm>
+
+        {props.mode === "edit" && (
+          <ConfirmForm
+            action={props.deleteAction ?? deleteWeek}
+            trigger="Delete this week"
+            triggerClassName="btn danger wide"
+            triggerAction="delete-week"
+            title={`Delete week ${props.week}?`}
+            confirmLabel="Delete week"
+            danger
+            hidden={<input type="hidden" name="round" value={props.week} />}
+          >
+            <p>
+              This removes week {props.week} ({props.recipientName}, {props.dateLabel}) from the history, along with who
+              paid and its total of {formatMoney(props.savedTotal, props.currency)}.
+            </p>
+            <p className="note">
+              Use this for a week that was entered wrongly. Afterwards you can add week {props.week} again from Add week.
+            </p>
+          </ConfirmForm>
+        )}
       </div>
     </>
   );

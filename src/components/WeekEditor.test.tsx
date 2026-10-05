@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 vi.mock("@/app/actions", () => ({
   saveWeek: vi.fn(),
   addPastWeek: vi.fn(),
+  deleteWeek: vi.fn(),
   closeRound: vi.fn(),
   startNewCycle: vi.fn(),
   addMember: vi.fn(),
@@ -95,9 +96,9 @@ const add = (over: Partial<AddWeekProps> = {}): AddWeekProps => ({
   mode: "add",
   // In payout order. With the cycle starting Sunday 6 Sept: week 1 = Agnes, 2 = Bonface, 3 = Brian, 4 = Agnes again.
   members: [
-    { id: 1, name: "Agnes Wanjira" },
-    { id: 2, name: "Bonface Mutie" },
-    { id: 3, name: "Brian Kithua" },
+    { id: 1, name: "Agnes Wanjira", joinedCycle: 1 },
+    { id: 2, name: "Bonface Mutie", joinedCycle: 1 },
+    { id: 3, name: "Brian Kithua", joinedCycle: 1 },
   ],
   currentRound: 5,
   existingRounds: [3, 4],
@@ -302,20 +303,24 @@ describe("WeekEditor: adding a missing past week", () => {
     expect(fd.has("recipient")).toBe(false);
   });
 
-  it("does not send someone who stopped being eligible after the week changed", async () => {
+  it("starts afresh when another week is chosen, so ticks never carry over from a different week", async () => {
     await render(<WeekEditor {...add()} />);
     await pick("1"); // Agnes receives, so Bonface and Brian can be ticked
     await tap(rows()[0]); // Bonface
     await tap(rows()[1]); // Brian
     expect(total()).toBe("200");
-    await pick("2"); // now Bonface receives and drops off the checklist
-    expect(names()).toEqual(["Agnes Wanjira", "Brian Kithua"]);
-    expect(total()).toBe("100"); // only Brian, who is still on the list and was ticked, counts
 
+    await pick("2"); // Bonface receives; the checklist is rebuilt and starts empty
+    expect(names()).toEqual(["Agnes Wanjira", "Brian Kithua"]);
+    expect(total()).toBe("0");
+    expect(rows().every((r) => r.getAttribute("aria-pressed") === "false")).toBe(true);
+
+    await tap(rows()[0]); // Agnes
     await tap(saveButton());
     await tap([...dialog().querySelectorAll<HTMLButtonElement>("button[type=submit]")][0]);
     await flush();
-    expect(submitted[0].getAll("paid")).toEqual(["Brian Kithua"]);
+    expect(submitted[0].get("week")).toBe("2");
+    expect(submitted[0].getAll("paid")).toEqual(["Agnes Wanjira"]);
   });
 
   it("asks for the cycle start date first when it has not been set", async () => {
@@ -360,5 +365,101 @@ describe("HistoryList", () => {
   it("says what to do when there is no history yet", async () => {
     await render(<HistoryList rows={[]} currency="KSh" />);
     expect(container.textContent).toContain("Add a missing week");
+  });
+});
+
+describe("WeekEditor: deleting a recorded week", () => {
+  const deleteAction = vi.fn();
+  beforeEach(() => deleteAction.mockClear());
+  const deleteButton = () => q("[data-action=delete-week]") as HTMLButtonElement;
+  const deleteDialog = () => q('dialog[aria-label^="Delete week"]');
+
+  it("offers a delete button on a recorded week, but not when adding one", async () => {
+    await render(<WeekEditor {...edit({ deleteAction })} />);
+    expect(deleteButton()).not.toBeNull();
+    expect(deleteButton().disabled).toBe(false);
+    await act(async () => { root.unmount(); });
+    await render(<WeekEditor {...add()} />);
+    expect(container.querySelector("[data-action=delete-week]")).toBeNull();
+  });
+
+  it("asks first, saying which week and what is lost, and deletes nothing until confirmed", async () => {
+    await render(<WeekEditor {...edit({ deleteAction })} />);
+    await tap(deleteButton());
+    const d = deleteDialog();
+    expect((d as HTMLDialogElement).open).toBe(true);
+    expect(d.getAttribute("aria-label")).toBe("Delete week 3?");
+    expect(d.textContent).toContain("Agnes Wanjira");
+    expect(d.textContent).toContain("20 Sept 2026");
+    expect(d.textContent).toContain("KSh 200");
+    expect(d.textContent).toContain("add week 3 again");
+    expect(deleteAction).not.toHaveBeenCalled();
+  });
+
+  it("deletes the right week once confirmed", async () => {
+    deleteAction.mockImplementation(async (fd: FormData) => { submitted.push(fd); });
+    await render(<WeekEditor {...edit({ deleteAction })} />);
+    await tap(deleteButton());
+    const confirm = [...deleteDialog().querySelectorAll<HTMLButtonElement>("button[type=submit]")][0];
+    expect(confirm.textContent).toBe("Delete week");
+    await tap(confirm);
+    await flush();
+    expect(deleteAction).toHaveBeenCalledTimes(1);
+    expect(submitted[0].get("round")).toBe("3");
+  });
+
+  it("cancelling leaves the week alone", async () => {
+    await render(<WeekEditor {...edit({ deleteAction })} />);
+    await tap(deleteButton());
+    const cancel = [...deleteDialog().querySelectorAll<HTMLButtonElement>("button")].find((b) => b.textContent === "Cancel")!;
+    await tap(cancel);
+    expect((deleteDialog() as HTMLDialogElement).open).toBe(false);
+    expect(deleteAction).not.toHaveBeenCalled();
+  });
+});
+
+describe("WeekEditor: adding a week with a locked order and pending ticks", () => {
+  const pick = (value: string) => type(container.querySelector("select") as HTMLSelectElement, value);
+  const names = () => rows().map((r) => r.querySelector(".toggle-name")!.textContent);
+  const derived = () => (container.querySelector(".derived")?.textContent ?? "").replace(/\s+/g, " ");
+
+  // Alphabetical order Agnes, Bonface, Brian. Bonface joined during cycle 1, so he is only in cycle 2 onwards.
+  const withJoiner = [
+    { id: 1, name: "Agnes Wanjira", joinedCycle: 1 },
+    { id: 2, name: "Bonface Mutie", joinedCycle: 2 },
+    { id: 3, name: "Brian Kithua", joinedCycle: 1 },
+  ];
+
+  it("gives cycle 1 weeks to the original members only, so nobody shifts", async () => {
+    await render(<WeekEditor {...add({ members: withJoiner, currentRound: 7, existingRounds: [] })} />);
+    await pick("2"); // cycle 1 is Agnes then Brian: week 2 is Brian, not Bonface
+    expect(derived()).toContain("RecipientBrian Kithua");
+    expect(derived()).toContain("Sunday13 Sept 2026");
+    expect(names()).not.toContain("Bonface Mutie"); // not in cycle 1, so could not have paid
+  });
+
+  it("brings the new member in from the next cycle, in their place in the order", async () => {
+    await render(<WeekEditor {...add({ members: withJoiner, currentRound: 7, existingRounds: [], recipientPays: true })} />);
+    await pick("4"); // cycle 2 starts at week 3: Agnes (3), Bonface (4), Brian (5)
+    expect(derived()).toContain("RecipientBonface Mutie");
+    expect(names()).toEqual(["Agnes Wanjira", "Bonface Mutie", "Brian Kithua"]);
+  });
+
+  it("keeps ticks already entered on the live checklist for a week that was never closed", async () => {
+    await render(<WeekEditor {...add({ pending: { 2: ["Agnes Wanjira", "Brian Kithua"] } })} />);
+    await pick("2"); // Bonface receives
+    expect(rows().map((r) => r.getAttribute("aria-pressed"))).toEqual(["true", "true"]);
+    expect(total()).toBe("200");
+    expect(container.textContent).toContain("ticks already entered for this week are kept");
+
+    await pick("1"); // a week with nothing pending starts empty
+    expect(total()).toBe("0");
+    expect(container.textContent).not.toContain("ticks already entered");
+  });
+
+  it("only keeps pending ticks for people who could have paid that week", async () => {
+    await render(<WeekEditor {...add({ pending: { 2: ["Agnes Wanjira", "Bonface Mutie"] } })} />);
+    await pick("2"); // Bonface is the recipient and does not contribute, so only Agnes counts
+    expect(total()).toBe("100");
   });
 });

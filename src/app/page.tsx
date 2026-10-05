@@ -23,6 +23,7 @@ export default async function PublicPage() {
         s.order.map((m) => ({ id: m.id, name: fullName(m), received: m.receivedThisCycle })),
         s.recipient?.id ?? null,
       )}
+      schedule={s.mode === "schedule" ? s.schedule : null}
       history={s.history.map((h) => ({
         id: h.id,
         round: h.round,

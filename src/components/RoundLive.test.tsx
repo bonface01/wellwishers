@@ -378,6 +378,24 @@ describe("RoundLive celebration and row sweep", () => {
   });
 });
 
+describe("RoundLive: a week that is already closed", () => {
+  it("shows the close button as done and disabled, and says where the payments went", async () => {
+    await act(async () => { root = createRoot(container); root.render(<RoundLive {...props} closed />); });
+    const button = container.querySelector("[data-action=close-week]") as HTMLButtonElement;
+    expect(button.textContent).toBe("Week closed ✓");
+    expect(button.disabled).toBe(true);
+    expect(container.textContent).toContain("saved in History");
+  });
+
+  it("offers Close week as normal while the week is open", async () => {
+    await act(async () => { root = createRoot(container); root.render(<RoundLive {...props} />); });
+    const button = container.querySelector("[data-action=close-week]") as HTMLButtonElement;
+    expect(button.textContent).toBe("Close week");
+    expect(button.disabled).toBe(false);
+    expect(container.textContent).not.toContain("saved in History");
+  });
+});
+
 describe("RoundLive before the page is ready", () => {
   it("server-renders toggles and buttons as disabled, then enables them once hydrated", async () => {
     setPaid.mockResolvedValue({ ok: true });

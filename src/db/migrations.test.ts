@@ -144,3 +144,64 @@ describe("migration 0004: optional cycle start date", () => {
     expect(r).toEqual({ d: "2026-09-13" });
   });
 });
+
+describe("migration 0005: locked order (joined cycle)", () => {
+  const MIGRATION = files.find((f) => f.startsWith("0005_"))!;
+  let pg: PGlite;
+  let before: unknown;
+
+  const snapshot = async () => ({
+    group: (await pg.query('select * from "group"')).rows,
+    members: (await pg.query("select id, first_name, second_name, received_this_cycle from members order by id")).rows,
+    history: (await pg.query("select * from history order by id")).rows,
+    payments: (await pg.query("select * from payments order by round, member_id")).rows,
+    historyPayments: (await pg.query("select * from history_payments order by id")).rows,
+  });
+
+  beforeAll(async () => {
+    pg = new PGlite();
+    for (const f of files.filter((f) => f < MIGRATION)) await apply(pg, f);
+    await pg.exec(`
+      insert into "group" (id, name, amount, currency, recipient_pays, current_round, cycle_start) values (1, 'Real Group', 100, 'KSh', false, 4, '2026-09-06');
+      insert into members (first_name, second_name, received_this_cycle) values ('Agnes','Wanjira',true), ('Bonface','Mutie',true), ('Brian','Kithua',false);
+      insert into payments (round, member_id) values (4, 3);
+      insert into history (id, round, recipient_name, amount, date, contribution, recipient_pays) values (1, 3, 'Agnes Wanjira', 100.00, '2026-09-20T15:00:00Z', 100.00, false);
+      insert into history_payments (history_id, member_id, member_name) values (1, 2, 'Bonface Mutie');
+    `);
+    before = await snapshot();
+    await apply(pg, MIGRATION);
+  });
+
+  afterAll(async () => {
+    await pg.close();
+  });
+
+  it("only adds a column that already has a value for every existing row", () => {
+    const sql = readFileSync(join(DIR, MIGRATION), "utf8").toUpperCase();
+    expect(sql).toMatch(/ALTER TABLE "MEMBERS" ADD COLUMN "JOINED_CYCLE" INTEGER DEFAULT 1 NOT NULL;?\s*$/);
+    expect(sql).not.toMatch(/\bDROP\b|\bTRUNCATE\b|ALTER COLUMN|RENAME|(^|;)\s*(DELETE\s+FROM|UPDATE)\b/);
+  });
+
+  it("leaves every existing row exactly as it was", async () => {
+    expect(await snapshot()).toEqual(before);
+  });
+
+  it("puts every existing member in cycle 1, so nobody's place changes", async () => {
+    const rows = (await pg.query("select first_name, joined_cycle from members order by id")).rows;
+    expect(rows).toEqual([
+      { first_name: "Agnes", joined_cycle: 1 },
+      { first_name: "Bonface", joined_cycle: 1 },
+      { first_name: "Brian", joined_cycle: 1 },
+    ]);
+  });
+
+  it("still accepts members written the old way, and lets a later joiner be set", async () => {
+    await pg.exec(`insert into members (first_name, second_name) values ('Old','Style')`);
+    await pg.exec(`insert into members (first_name, second_name, joined_cycle) values ('New','Joiner', 2)`);
+    const rows = (await pg.query("select first_name, joined_cycle from members where first_name in ('Old','New') order by id")).rows;
+    expect(rows).toEqual([
+      { first_name: "Old", joined_cycle: 1 },
+      { first_name: "New", joined_cycle: 2 },
+    ]);
+  });
+});

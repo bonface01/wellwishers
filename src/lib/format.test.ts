@@ -13,3 +13,12 @@ describe("formatMoney", () => {
     expect(formatMoney(1500, "")).toBe("1,500");
   });
 });
+
+import { formatSunday } from "./format";
+
+describe("formatSunday", () => {
+  it("writes a calendar date the way the schedule shows it", () => {
+    expect(formatSunday("2026-10-11")).toBe("Sun 11 Oct");
+    expect(formatSunday("2026-09-06")).toBe("Sun 6 Sept");
+  });
+});

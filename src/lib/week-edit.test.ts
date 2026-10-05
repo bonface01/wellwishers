@@ -8,7 +8,6 @@ import {
   isSunday,
   missingWeeks,
   sanitizePaidNames,
-  scheduleForWeek,
   setupProblem,
   sundayPayoutAt,
   validateNewWeek,
@@ -54,37 +53,6 @@ describe("addDays", () => {
   });
 });
 
-describe("scheduleForWeek (week 1 is the cycle start Sunday)", () => {
-  const start = "2026-09-13"; // a Sunday
-
-  it("gives week 1 the start Sunday and the first person in the order", () => {
-    expect(scheduleForWeek(1, start, ORDER)).toEqual({ date: "2026-09-13", recipient: "Agnes Wanjira" });
-  });
-
-  it("moves one Sunday and one person on for each week", () => {
-    expect(scheduleForWeek(2, start, ORDER)).toEqual({ date: "2026-09-20", recipient: "Bonface Mutie" });
-    expect(scheduleForWeek(3, start, ORDER)).toEqual({ date: "2026-09-27", recipient: "Brian Kithua" });
-  });
-
-  it("wraps back to the top of the order for the next cycle, while the dates keep counting", () => {
-    expect(scheduleForWeek(4, start, ORDER)).toEqual({ date: "2026-10-04", recipient: "Agnes Wanjira" });
-    expect(scheduleForWeek(7, start, ORDER)).toEqual({ date: "2026-10-25", recipient: "Agnes Wanjira" });
-  });
-
-  it("always lands on a Sunday", () => {
-    for (let w = 1; w <= 60; w++) expect(isSunday(scheduleForWeek(w, start, ORDER)!.date)).toBe(true);
-  });
-
-  it("returns null when it cannot be worked out", () => {
-    expect(scheduleForWeek(0, start, ORDER)).toBeNull();
-    expect(scheduleForWeek(1.5, start, ORDER)).toBeNull();
-    expect(scheduleForWeek(Number.NaN, start, ORDER)).toBeNull();
-    expect(scheduleForWeek(2, null, ORDER)).toBeNull();
-    expect(scheduleForWeek(2, "2026-09-14", ORDER)).toBeNull(); // a Monday
-    expect(scheduleForWeek(2, start, [])).toBeNull();
-  });
-});
-
 describe("missingWeeks", () => {
   it("lists the earlier weeks that are not in the history", () => {
     expect(missingWeeks(5, [3, 4])).toEqual([1, 2]);
@@ -108,7 +76,7 @@ describe("setupProblem", () => {
 });
 
 describe("validateNewWeek", () => {
-  const ok = { week: 2, currentRound: 4, existingRounds: [3], cycleStart: "2026-09-13", order: ORDER };
+  const ok = { week: 2, currentRound: 4, existingRounds: [3], cycleStart: "2026-09-13", memberCount: ORDER.length };
 
   it("accepts a past week that is not in the history once the cycle start is set", () => {
     expect(validateNewWeek(ok)).toBeNull();
@@ -123,7 +91,7 @@ describe("validateNewWeek", () => {
     [{ week: 3 }, /already in the history/],
     [{ cycleStart: null }, /cycle start date in Settings/],
     [{ cycleStart: "2026-09-14" }, /must be a Sunday/],
-    [{ order: [] }, /Add the members/],
+    [{ memberCount: 0 }, /Add the members/],
   ])("rejects %j", (patch, message) => {
     expect(validateNewWeek({ ...ok, ...patch })).toMatch(message);
   });

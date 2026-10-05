@@ -40,19 +40,6 @@ export function addDays(value: string, days: number): string {
   return new Date(Date.UTC(y, mo - 1, d + days)).toISOString().slice(0, 10);
 }
 
-export type WeekSchedule = { date: string; recipient: string };
-
-/**
- * The Sunday and the recipient of week N, worked out rather than typed in. `cycleStart` is the Sunday of week 1;
- * week N falls (N − 1) weeks later and goes to the N-th person in the payout order, wrapping back to the top
- * once everyone has received. Returns null when it cannot be worked out.
- */
-export function scheduleForWeek(week: number, cycleStart: string | null, order: string[]): WeekSchedule | null {
-  if (!Number.isInteger(week) || week < 1) return null;
-  if (!cycleStart || !isSunday(cycleStart) || order.length === 0) return null;
-  return { date: addDays(cycleStart, 7 * (week - 1)), recipient: order[(week - 1) % order.length] };
-}
-
 /** Earlier weeks that are not in the history yet: 1 up to the week before the current one. */
 export function missingWeeks(currentRound: number, existingRounds: number[]): number[] {
   const have = new Set(existingRounds);
@@ -74,12 +61,12 @@ export type NewWeekInput = {
   currentRound: number;
   existingRounds: number[];
   cycleStart: string | null;
-  order: string[];
+  memberCount: number;
 };
 
 /** Returns a human-readable problem, or null when the new week can be added. */
 export function validateNewWeek(i: NewWeekInput): string | null {
-  const setup = setupProblem(i.cycleStart, i.order.length);
+  const setup = setupProblem(i.cycleStart, i.memberCount);
   if (setup) return setup;
   if (!Number.isInteger(i.week) || i.week < 1) return "Choose the week number.";
   if (i.week >= i.currentRound) {

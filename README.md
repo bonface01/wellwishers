@@ -9,7 +9,14 @@ A small web app for a WhatsApp savings group. Members each contribute a fixed am
 
 **Currency:** defaults to `KSh` and is shown before the amount everywhere, e.g. `KSh 1,000`.
 
-**Joining mid-cycle:** in Settings set the current week number, then on the Members tab mark who has already received this cycle.
+**The weekly schedule:** contributions happen every Sunday. Set the **Cycle start date** (the Sunday of week 1) in Settings and everything follows from it:
+- The current week is worked out from today's date in Nairobi (a week stays current through its own Sunday, and the next one begins on the Monday). There is no week number to set by hand and no "received" toggles.
+- Week N's recipient is the N-th member in the payout order. When the last member's week is done, the next cycle starts the following Sunday, back at the top.
+- The order is locked for the running cycle. A member added mid-cycle joins from the next cycle, so nobody already in the order moves.
+- The full schedule (each member with their week number and Sunday, marked received, this week or upcoming) is shown on both the admin Week tab and the public page.
+- **Close week** confirms the payout and saves that week's payments in History.
+
+**Until the cycle start date is set**, the app keeps working exactly as before (manual week number and "received" toggles, **Close week** moves on to the next week) and the Week tab shows a prompt to set it in Settings.
 
 Stack: Next.js (App Router) + TypeScript, Neon Postgres, Drizzle ORM, deployed on Vercel.
 
@@ -50,8 +57,9 @@ Rerun `npm run db:migrate` whenever a new migration is added.
 
 - **Share update** (Week tab) opens a sheet with the WhatsApp text (Copy / Open in WhatsApp) and **Download status image**, a 1080×1920 PNG drawn in the browser with canvas (no external service).
 - The "Payout in …" countdown targets Sunday 18:00 Nairobi time (fixed in `src/lib/countdown.ts`); it is display-only.
-- **History tab:** closing a week now saves who paid, not just the total. Tap any past week to tick or untick who paid; its total is recalculated and you confirm before saving. **Add week** records a missing earlier week: you pick the week number and tick who paid, and the Sunday and the recipient are worked out for you from the **Cycle start date** in Settings (the Sunday of week 1) and the payout order (week N goes to the N-th person, wrapping around). Weeks closed before this change have no per-member record until you tick them once.
-- Migrations `0003` and `0004` are additive (a new `history_payments` table, two optional columns on `history`, and an optional `cycle_start` on the group), so existing data is untouched. **Run `npm run db:migrate` against the production database before deploying code that uses them.**
+- **History tab:** closing a week now saves who paid, not just the total. Tap any past week to tick or untick who paid; its total is recalculated and you confirm before saving. **Add week** records a missing earlier week: you pick the week number and tick who paid, and the Sunday and the recipient are worked out for you from the **Cycle start date** in Settings (the Sunday of week 1) and the payout order (week N goes to the N-th person, wrapping around). Weeks closed before this change have no per-member record until you tick them once. A recorded week can also be **deleted** from its page (with a confirmation), for example one entered wrongly, and then added again.
+- Removing a member takes them out of the schedule straight away (later weeks move up). Only *adding* a member is held back until the next cycle.
+- Migrations `0003` to `0005` are additive (a new `history_payments` table, two optional columns on `history`, an optional `cycle_start` on the group, and a `joined_cycle` on members that defaults to 1 for everyone already in the group), so existing data is untouched. **Run `npm run db:migrate` against the production database before deploying code that uses them.**
 - `npm test` runs the unit and component tests. The database tests run the real migrations on an in-memory Postgres (PGlite), never your database.
 - **Look and feel:** frosted-glass cards over a slow-drifting orb backdrop (only `transform` and `opacity` animate; the drift pauses while the tab is hidden). It honours `prefers-reduced-motion` (no drift, tilt, confetti, cascade or digit roll) and `prefers-reduced-transparency` (solid cards), and falls back to solid cards where `backdrop-filter` is unsupported. Setting `data-theme="light"` or `"dark"` on `<html>` forces a colour scheme (handy for design review; there is no toggle in the UI).
 

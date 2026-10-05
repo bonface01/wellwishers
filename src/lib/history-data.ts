@@ -1,8 +1,9 @@
 import { desc, eq, sql } from "drizzle-orm";
 import { getDb } from "@/db";
-import { history, historyPayments, members } from "@/db/schema";
+import { history, historyPayments, members, payments } from "@/db/schema";
 import { getGroup } from "./data";
 import { comparePayoutOrder, fullName } from "./names";
+import { currentWeekFor, nairobiToday, orderForCycle, weekInfo, type SMember } from "./schedule";
 import { buildChecklist, type ChecklistRow } from "./week-edit";
 
 export type HistoryListRow = {
@@ -47,8 +48,15 @@ export async function getWeek(round: number) {
   ]);
   const contribution = row.contribution === null ? group.amount : Number(row.contribution);
   const recipientPays = row.recipientPays ?? group.recipientPays;
+
+  // Who could have paid that week: with a schedule, the members of that week's cycle (later joiners were not in it).
+  const sorted = [...memberRows].sort(comparePayoutOrder);
+  const sm: SMember[] = sorted.map((m) => ({ id: m.id, name: fullName(m), joinedCycle: m.joinedCycle }));
+  const info = group.cycleStart ? weekInfo(round, sm) : null;
+  const eligible = info ? orderForCycle(sm, info.cycle) : sm;
+
   const checklist: ChecklistRow[] = buildChecklist({
-    members: [...memberRows].sort(comparePayoutOrder).map((m) => ({ id: m.id, name: fullName(m) })),
+    members: eligible.map((m) => ({ id: m.id, name: m.name })),
     saved: saved.map((s) => ({ memberId: s.memberId, name: s.memberName })),
     recipientName: row.recipientName,
     recipientPays,
@@ -65,15 +73,29 @@ export async function getWeek(round: number) {
 
 export async function getAddWeekData() {
   const db = getDb();
-  const [group, memberRows, rounds] = await Promise.all([
+  const [group, memberRows, rounds, pendingRows] = await Promise.all([
     getGroup(),
     db.select().from(members),
     db.select({ round: history.round }).from(history),
+    db.select({ round: payments.round, memberId: payments.memberId }).from(payments),
   ]);
+  const sorted = [...memberRows].sort(comparePayoutOrder);
+  const names = new Map(sorted.map((m) => [m.id, fullName(m)]));
+
+  // Ticks already entered on the live checklist for a week that was never closed, so adding that week keeps them.
+  const pending: Record<number, string[]> = {};
+  for (const p of pendingRows) {
+    const name = names.get(p.memberId);
+    if (name) (pending[p.round] ??= []).push(name);
+  }
+
   return {
     group,
-    // In payout order: week N goes to the N-th name here (wrapping), starting on the cycle start Sunday.
-    members: [...memberRows].sort(comparePayoutOrder).map((m) => ({ id: m.id, name: fullName(m) })),
+    // In payout order, each with the cycle they joined: week N goes to the N-th name of its cycle.
+    members: sorted.map((m) => ({ id: m.id, name: fullName(m), joinedCycle: m.joinedCycle })),
     existingRounds: rounds.map((r) => r.round),
+    // The week the group is in today (from the date once a cycle start is set).
+    currentRound: group.cycleStart ? currentWeekFor(nairobiToday(), group.cycleStart) : group.currentRound,
+    pending,
   };
 }

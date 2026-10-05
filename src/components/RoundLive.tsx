@@ -33,6 +33,8 @@ export type LiveRoundProps = {
   payers: (Payer & { paid: boolean })[];
   /** Rendered at the top of the Payments card (e.g. a "set the amount" notice). */
   notice?: ReactNode;
+  /** This week has already been closed (it is in the history). */
+  closed?: boolean;
   /** Defaults to the real server actions. Overridden only by the offline design preview. */
   actions?: {
     setPaid: (memberId: number, paid: boolean) => Promise<FormState>;
@@ -229,9 +231,15 @@ export function RoundLive(props: LiveRoundProps) {
           recipient={props.recipientName}
           unpaid={unpaidNames}
           disabled={saving.length > 0}
+          closed={props.closed}
           action={props.actions?.closeRound}
         />
       </div>
+      {props.closed && (
+        <p className="note" style={{ textAlign: "center" }}>
+          This week is closed and its payments are saved in History. You can still correct them there.
+        </p>
+      )}
 
       {error && (
         <button type="button" className="toast" role="alert" onClick={() => setError(undefined)}>

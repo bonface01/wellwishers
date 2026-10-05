@@ -11,6 +11,7 @@ import {
   startNewCycle,
   type FormState,
 } from "@/app/actions";
+import { formatSunday } from "@/lib/format";
 import { useHydrated } from "@/lib/use-hydrated";
 import { SheetDialog } from "./ui";
 
@@ -89,6 +90,9 @@ export function SettingsForm(props: {
   recipientPays: boolean;
   currentRound: number;
   cycleStart: string | null;
+  /** Today's week, worked out from the date. Only known once a cycle start date is set. */
+  derivedWeek: number | null;
+  derivedDate: string | null;
 }) {
   const hydrated = useHydrated();
   const [state, action, pending] = useActionState(saveSettings, undefined);
@@ -113,21 +117,37 @@ export function SettingsForm(props: {
         <span>Recipient also contributes that week</span>
       </label>
       <label>
-        Current week number
-        <input name="currentRound" type="number" inputMode="numeric" min="1" step="1" defaultValue={props.currentRound} required />
-        <small className="muted">
-          Joining a group that is already running? Set the week you are on. Changing this clears the
-          payment checklist. Then mark who has already received on the Members tab.
-        </small>
-      </label>
-      <label>
         Cycle start date
         <input name="cycleStart" type="date" defaultValue={props.cycleStart ?? ""} />
         <small className="muted">
-          The Sunday of week 1. When you add a missing past week, its Sunday and recipient are worked out from
-          this date and the payout order. Leave empty if you never need to add past weeks.
+          The Sunday of week 1. Contributions happen every Sunday, and each week&apos;s recipient is the next
+          person in the payout order. Once this is set, the current week, the recipients and the full schedule
+          follow the date and the order, so nothing else needs setting by hand.
         </small>
       </label>
+      {props.cycleStart && props.derivedWeek !== null && props.derivedDate && (
+        <p className="note" role="status">
+          Today (Nairobi time) the group is in <strong>week {props.derivedWeek}</strong>, which falls on{" "}
+          {formatSunday(props.derivedDate)}.
+        </p>
+      )}
+      {!props.cycleStart && (
+        <>
+          <label>
+            Current week number
+            <input name="currentRound" type="number" inputMode="numeric" min="1" step="1" defaultValue={props.currentRound} required />
+            <small className="muted">
+              Only used until a cycle start date is set. Joining a group that is already running? Set the week
+              you are on. Changing this clears the payment checklist. Then mark who has already received on the
+              Members tab.
+            </small>
+          </label>
+          <p className="note">
+            The automatic weekly schedule is off until you set the cycle start date above. Everything keeps
+            working as before in the meantime.
+          </p>
+        </>
+      )}
       <Msg state={state} />
       <button className="btn primary" disabled={pending || !hydrated}>{pending ? "Saving…" : "Save settings"}</button>
     </form>
@@ -223,17 +243,19 @@ export function CloseRoundForm(props: {
   recipient: string;
   unpaid: string[];
   disabled?: boolean;
+  /** This week is already closed and saved in the history. */
+  closed?: boolean;
   /** Defaults to the real server action. Overridden only by the offline design preview. */
   action?: (formData: FormData) => void | Promise<void>;
 }) {
   return (
     <ConfirmForm
       action={props.action ?? closeRound}
-      trigger="Close week"
+      trigger={props.closed ? "Week closed ✓" : "Close week"}
       triggerClassName="btn dark"
       triggerAction="close-week"
       formClassName="action-cell"
-      disabled={props.disabled}
+      disabled={props.disabled || props.closed}
       title={`Close week ${props.round}?`}
       confirmLabel="Close week"
       hidden={<input type="hidden" name="round" value={props.round} />}

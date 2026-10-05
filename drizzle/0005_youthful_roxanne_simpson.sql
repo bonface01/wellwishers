@@ -1,0 +1,1 @@
+ALTER TABLE "members" ADD COLUMN "joined_cycle" integer DEFAULT 1 NOT NULL;

@@ -1,7 +1,9 @@
 import Link from "next/link";
 import { formatDate, formatMoney } from "@/lib/format";
+import type { CycleSchedule } from "@/lib/schedule";
 import type { TimelineEntry } from "@/lib/timeline";
 import { Hero, RoundHeader } from "./Hero";
+import { ScheduleCard } from "./ScheduleList";
 import { Avatar, Icon } from "./ui";
 
 export type PublicViewProps = {
@@ -15,7 +17,10 @@ export type PublicViewProps = {
   collected: number;
   expected: number;
   payers: { id: number; name: string; paid: boolean }[];
+  /** The old "who is next" list, used until a cycle start date is set. */
   timeline: TimelineEntry[];
+  /** The full dated schedule for the current cycle, once a cycle start date is set. */
+  schedule?: CycleSchedule | null;
   history: { id: number; round: number; recipientName: string; amount: number; date: Date }[];
 };
 
@@ -73,25 +78,29 @@ export function PublicView(p: PublicViewProps) {
             </div>
           </section>
 
-          <section className="card">
-            <div className="card-head">
-              <h3>Payout order</h3>
-              <span className="count">{formatMoney(p.amount, p.currency)} each</span>
-            </div>
-            <ol className="timeline">
-              {p.timeline.map((e) => (
-                <li key={e.id} className={e.status}>
-                  <span className="node" aria-hidden="true">
-                    {e.status === "received" && <Icon name="check" size={14} />}
-                  </span>
-                  <span className="tl-name">{e.name}</span>
-                  {e.status === "received" && <span className="tl-when">Received</span>}
-                  {e.status === "current" && <span className="tag amber">This week</span>}
-                  {e.status === "upcoming" && <span className="tl-when">{e.when}</span>}
-                </li>
-              ))}
-            </ol>
-          </section>
+          {p.schedule ? (
+            <ScheduleCard schedule={p.schedule} />
+          ) : (
+            <section className="card">
+              <div className="card-head">
+                <h3>Payout order</h3>
+                <span className="count">{formatMoney(p.amount, p.currency)} each</span>
+              </div>
+              <ol className="timeline">
+                {p.timeline.map((e) => (
+                  <li key={e.id} className={e.status}>
+                    <span className="node" aria-hidden="true">
+                      {e.status === "received" && <Icon name="check" size={14} />}
+                    </span>
+                    <span className="tl-name">{e.name}</span>
+                    {e.status === "received" && <span className="tl-when">Received</span>}
+                    {e.status === "current" && <span className="tag amber">This week</span>}
+                    {e.status === "upcoming" && <span className="tl-when">{e.when}</span>}
+                  </li>
+                ))}
+              </ol>
+            </section>
+          )}
 
           <section className="card">
             <div className="card-head">

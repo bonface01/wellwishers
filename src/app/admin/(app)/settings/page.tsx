@@ -1,8 +1,10 @@
 import { SettingsForm } from "@/components/forms";
-import { getGroup } from "@/lib/data";
+import { getRoundState } from "@/lib/data";
 
 export default async function SettingsPage() {
-  const g = await getGroup();
+  const s = await getRoundState();
+  const g = s.group;
+  const scheduled = s.mode === "schedule";
   return (
     <>
       <header className="page-head">
@@ -17,6 +19,8 @@ export default async function SettingsPage() {
           recipientPays={g.recipientPays}
           currentRound={g.currentRound}
           cycleStart={g.cycleStart}
+          derivedWeek={scheduled ? s.week : null}
+          derivedDate={scheduled ? s.currentDate : null}
         />
       </section>
     </>

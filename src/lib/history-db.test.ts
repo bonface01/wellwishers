@@ -9,7 +9,9 @@ import { groups, history, historyPayments, members, payments } from "@/db/schema
 import {
   addWeekStatements,
   closeWeekStatements,
+  deleteWeekStatements,
   nextHistoryId,
+  recordWeekStatements,
   saveWeekStatements,
   type Statements,
 } from "./history-db";
@@ -187,5 +189,72 @@ describe("addWeekStatements", () => {
         paid: [{ id: 2, name: "Bonface Mutie" }, { id: 2, name: "Bonface Mutie" }],
       })),
     ).rejects.toThrow();
+  });
+});
+
+describe("recordWeekStatements", () => {
+  it("records the week and clears the ticks still waiting for it, leaving other weeks alone", async () => {
+    const [agnes, bonface, brian] = await db.select().from(members).orderBy(members.id);
+    await db.insert(payments).values([
+      { round: 4, memberId: bonface.id },
+      { round: 4, memberId: brian.id },
+      { round: 5, memberId: agnes.id }, // a different week's ticks
+    ]);
+    const id = await nextHistoryId(db);
+    await run(
+      recordWeekStatements(db, {
+        historyId: id, round: 4, date: new Date("2026-10-04T15:00:00Z"), recipientName: "Agnes Wanjira",
+        contribution: 100, recipientPays: false,
+        paid: [{ id: bonface.id, name: "Bonface Mutie" }, { id: brian.id, name: "Brian Kithua" }],
+      }),
+    );
+
+    expect(await paidFor(id)).toEqual(["Bonface Mutie", "Brian Kithua"]);
+    expect((await db.select().from(history))[0]).toMatchObject({ round: 4, amount: "200.00", contribution: "100.00" });
+    expect((await db.select().from(payments)).map((p) => p.round)).toEqual([5]);
+  });
+
+  it("does not touch the group or who has received, since the schedule decides both", async () => {
+    const before = { group: await db.select().from(groups), members: await db.select().from(members).orderBy(members.id) };
+    const id = await nextHistoryId(db);
+    await run(
+      recordWeekStatements(db, {
+        historyId: id, round: 2, date: new Date("2026-09-13T15:00:00Z"), recipientName: "Bonface Mutie",
+        contribution: 100, recipientPays: false, paid: [{ id: 1, name: "Agnes Wanjira" }],
+      }),
+    );
+    expect(await db.select().from(groups)).toEqual(before.group);
+    expect(await db.select().from(members).orderBy(members.id)).toEqual(before.members);
+  });
+});
+
+describe("deleteWeekStatements", () => {
+  const week = (historyId: number, round: number, recipientName: string, paid: { id: number; name: string }[]) =>
+    addWeekStatements(db, {
+      historyId, round, date: new Date("2026-09-20T15:00:00Z"), recipientName, contribution: 100, recipientPays: false, paid,
+    });
+
+  it("removes the week and its per-member payments, and only that week", async () => {
+    const a = await nextHistoryId(db);
+    await run(week(a, 3, "Agnes Wanjira", [{ id: 2, name: "Bonface Mutie" }, { id: 3, name: "Brian Kithua" }]));
+    const b = await nextHistoryId(db);
+    await run(week(b, 4, "Bonface Mutie", [{ id: 3, name: "Brian Kithua" }]));
+
+    await run(deleteWeekStatements(db, a));
+
+    expect((await db.select().from(history)).map((h) => h.round)).toEqual([4]);
+    expect(await paidFor(a)).toEqual([]);
+    expect(await paidFor(b)).toEqual(["Brian Kithua"]); // the other week is untouched
+  });
+
+  it("lets the same week number be added again afterwards", async () => {
+    const a = await nextHistoryId(db);
+    await run(week(a, 3, "Wrong Person", []));
+    await run(deleteWeekStatements(db, a));
+    const again = await nextHistoryId(db);
+    await run(week(again, 3, "Brian Kithua", [{ id: 2, name: "Bonface Mutie" }]));
+    const rows = await db.select().from(history);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ round: 3, recipientName: "Brian Kithua", amount: "100.00" });
   });
 });

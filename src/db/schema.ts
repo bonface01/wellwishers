@@ -30,6 +30,9 @@ export const members = pgTable(
     firstName: text("first_name").notNull(),
     secondName: text("second_name").notNull(),
     receivedThisCycle: boolean("received_this_cycle").notNull().default(false),
+    // The first cycle this member takes part in. Someone added mid-cycle joins from the next cycle, so nobody
+    // already in the order is shifted. Everyone who existed before cycles were tracked is in cycle 1.
+    joinedCycle: integer("joined_cycle").notNull().default(1),
   },
   (t) => [
     uniqueIndex("members_full_name_unique").on(

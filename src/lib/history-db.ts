@@ -106,3 +106,16 @@ export function addWeekStatements(
   if (p.paid.length > 0) out.push(db.insert(historyPayments).values(paymentRows(p.historyId, p.paid)));
   return out as Statements;
 }
+
+/**
+ * Recording a week that is not in the history yet (closing the current week, or adding a missed one). It also
+ * clears any ticks still waiting in the live checklist for that week, so none are left behind.
+ */
+export function recordWeekStatements(db: Db, p: Parameters<typeof addWeekStatements>[1]): Statements {
+  return [...addWeekStatements(db, p), db.delete(payments).where(eq(payments.round, p.round))] as Statements;
+}
+
+/** Deleting a recorded week. Its per-member payments go with it (the foreign key cascades). */
+export function deleteWeekStatements(db: Db, historyId: number): Statements {
+  return [db.delete(history).where(eq(history.id, historyId))];
+}
