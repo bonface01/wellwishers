@@ -24,7 +24,7 @@ export function PublicView(p: PublicViewProps) {
   const paidCount = p.payers.filter((m) => m.paid).length;
 
   return (
-    <main className="page">
+    <main className="page cascade">
       {p.timeline.length === 0 ? (
         <>
           <header className="page-head">

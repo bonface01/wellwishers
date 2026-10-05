@@ -1,8 +1,7 @@
 "use client";
 
-import { useEffect, useRef, useState, type ReactNode, type RefObject } from "react";
+import { useEffect, useId, useState, type CSSProperties, type ReactNode, type RefObject } from "react";
 import { formatNumber } from "@/lib/format";
-import { prefersReducedMotion } from "@/lib/motion";
 import { initialsOf } from "@/lib/timeline";
 
 /** Current time, refreshed every `ms`. Null until mounted, so server and client markup match. */
@@ -16,45 +15,37 @@ export function useNow(ms = 60_000): Date | null {
   return now;
 }
 
-const easeOut = (t: number) => 1 - Math.pow(1 - t, 3);
+const DIGITS = ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9"];
 
-/** A number that counts smoothly to its new value (about 0.5s, ease-out). Jumps if motion is reduced. */
-export function AnimatedNumber({ value, durationMs = 500 }: { value: number; durationMs?: number }) {
-  const [shown, setShown] = useState(value);
-  const current = useRef(value);
-
-  useEffect(() => {
-    const from = current.current;
-    if (from === value) return;
-    if (prefersReducedMotion() || typeof requestAnimationFrame !== "function") {
-      current.current = value;
-      setShown(value);
-      return;
-    }
-    let frame = 0;
-    const start = performance.now();
-    const tick = (t: number) => {
-      const p = Math.min(1, (t - start) / durationMs);
-      const v = p >= 1 ? value : from + (value - from) * easeOut(p);
-      current.current = v;
-      setShown(v);
-      if (p < 1) frame = requestAnimationFrame(tick);
-    };
-    frame = requestAnimationFrame(tick);
-    // Frames don't run in background tabs; make sure the number still settles on the right value.
-    const settle = setTimeout(() => {
-      current.current = value;
-      setShown(value);
-    }, durationMs + 150);
-    return () => {
-      cancelAnimationFrame(frame);
-      clearTimeout(settle);
-    };
-  }, [value, durationMs]);
-
+/**
+ * A number that rolls digit by digit like a slot counter when it changes. Each digit is a column holding 0–9;
+ * changing the number just moves the column (CSS transition on transform), so it needs no timers or frames.
+ * Columns are keyed from the right so units, tens and hundreds stay in place as the number grows.
+ */
+export function RollingNumber({ value }: { value: number }) {
+  const text = formatNumber(Math.round(value * 100) / 100);
+  const chars = text.split("");
   return (
-    <span className="num" data-value={value}>
-      {formatNumber(Math.round(shown * 100) / 100)}
+    <span className="num" data-value={value} role="img" aria-label={text}>
+      {chars.map((ch, i) => {
+        const fromRight = chars.length - 1 - i;
+        if (!/\d/.test(ch)) {
+          return (
+            <span key={`s${fromRight}`} className="sep" aria-hidden="true">
+              {ch}
+            </span>
+          );
+        }
+        return (
+          <span key={`d${fromRight}`} className="digit" aria-hidden="true">
+            <span className="strip" style={{ "--d": Number(ch), "--i": fromRight } as CSSProperties}>
+              {DIGITS.map((d) => (
+                <span key={d}>{d}</span>
+              ))}
+            </span>
+          </span>
+        );
+      })}
     </span>
   );
 }
@@ -64,7 +55,7 @@ export function Money({ value, currency, className = "" }: { value: number; curr
   return (
     <span className={`money ${className}`}>
       {currency && <span className="cur">{currency}</span>}
-      <AnimatedNumber value={value} />
+      <RollingNumber value={value} />
     </span>
   );
 }
@@ -77,27 +68,53 @@ export function Avatar({ name, tone }: { name: string; tone: number }) {
   );
 }
 
-/** Circular progress ring with "8/10" and "paid" in the centre. */
-export function Ring({ paid, total, complete }: { paid: number; total: number; complete: boolean }) {
+/**
+ * Circular progress ring with "8/10" and "paid" in the centre, a gradient stroke (green to emerald, amber to gold
+ * when complete) and a soft amber glow behind it. `celebrate` makes it glow and pulse once.
+ */
+export function Ring({
+  paid,
+  total,
+  complete,
+  celebrate = false,
+}: {
+  paid: number;
+  total: number;
+  complete: boolean;
+  celebrate?: boolean;
+}) {
+  const uid = useId().replace(/[^a-zA-Z0-9]/g, "");
   const R = 50;
   const C = 2 * Math.PI * R;
   const fraction = total > 0 ? Math.min(1, paid / total) : 0;
   return (
     <div
-      className={`ring ${complete ? "complete" : ""}`}
+      className={`ring ${complete ? "complete" : ""} ${celebrate ? "celebrate" : ""}`}
       role="progressbar"
       aria-label={`${paid} of ${total} paid`}
       aria-valuenow={Math.round(fraction * 100)}
       aria-valuemin={0}
       aria-valuemax={100}
     >
+      <span className="ring-glow" aria-hidden="true" />
       <svg viewBox="0 0 120 120" aria-hidden="true">
+        <defs>
+          <linearGradient id={`${uid}ok`} x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0" stopColor="#6EE7B0" />
+            <stop offset="1" stopColor="#0E9F6E" />
+          </linearGradient>
+          <linearGradient id={`${uid}gold`} x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0" stopColor="#F2B544" />
+            <stop offset="1" stopColor="#FFD66B" />
+          </linearGradient>
+        </defs>
         <circle className="ring-track" cx="60" cy="60" r={R} />
         <circle
           className="ring-fill"
           cx="60"
           cy="60"
           r={R}
+          stroke={`url(#${uid}${complete ? "gold" : "ok"})`}
           strokeDasharray={C}
           strokeDashoffset={C * (1 - fraction)}
           transform="rotate(-90 60 60)"

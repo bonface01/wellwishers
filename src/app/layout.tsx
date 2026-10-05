@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { Plus_Jakarta_Sans } from "next/font/google";
+import { Backdrop } from "@/components/Backdrop";
 import "./globals.css";
 
 const font = Plus_Jakarta_Sans({
@@ -19,15 +20,18 @@ export const viewport: Viewport = {
   initialScale: 1,
   colorScheme: "light dark",
   themeColor: [
-    { media: "(prefers-color-scheme: light)", color: "#EEF2EF" },
-    { media: "(prefers-color-scheme: dark)", color: "#08110E" },
+    { media: "(prefers-color-scheme: light)", color: "#E8F2EC" },
+    { media: "(prefers-color-scheme: dark)", color: "#07140F" },
   ],
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en" className={font.variable}>
-      <body>{children}</body>
+      <body>
+        <Backdrop />
+        {children}
+      </body>
     </html>
   );
 }

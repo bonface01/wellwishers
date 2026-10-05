@@ -51,6 +51,7 @@ Rerun `npm run db:migrate` whenever a new migration is added.
 - **Share update** (Week tab) opens a sheet with the WhatsApp text (Copy / Open in WhatsApp) and **Download status image**, a 1080×1920 PNG drawn in the browser with canvas (no external service).
 - The "Payout in …" countdown targets Sunday 18:00 Nairobi time (fixed in `src/lib/countdown.ts`); it is display-only.
 - `npm test` runs the unit and component tests.
+- **Look and feel:** frosted-glass cards over a slow-drifting orb backdrop (only `transform` and `opacity` animate; the drift pauses while the tab is hidden). It honours `prefers-reduced-motion` (no drift, tilt, confetti, cascade or digit roll) and `prefers-reduced-transparency` (solid cards), and falls back to solid cards where `backdrop-filter` is unsupported. Setting `data-theme="light"` or `"dark"` on `<html>` forces a colour scheme (handy for design review; there is no toggle in the UI).
 
 - The database starts empty. The admin dashboard prompts you to add members and set the contribution amount.
 - The group settings row is created automatically on first load.

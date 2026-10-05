@@ -288,6 +288,96 @@ describe("RoundLive double taps", () => {
   });
 });
 
+/** Pretend to be a browser with motion enabled (or reduced). jsdom has no matchMedia, which counts as "reduced". */
+function stubMotion(reduced: boolean) {
+  Object.defineProperty(window, "matchMedia", {
+    configurable: true,
+    value: (query: string) => ({ matches: query.includes("prefers-reduced-motion") ? reduced : false, media: query }),
+  });
+}
+
+describe("RoundLive celebration and row sweep", () => {
+  const allButOne = {
+    ...props,
+    payers: [
+      { id: 1, name: "Agnes Wanjira", paid: true },
+      { id: 2, name: "Boniface Mutinda", paid: true },
+      { id: 3, name: "Brian Mutinda", paid: false },
+    ],
+  };
+  const allPaid = { ...props, payers: props.payers.map((p) => ({ ...p, paid: true })) };
+
+  afterEach(() => {
+    delete (window as { matchMedia?: unknown }).matchMedia;
+  });
+
+  it("glows, pulses and bursts confetti once when the pot becomes complete", async () => {
+    stubMotion(false);
+    const save = deferred<{ ok: true }>();
+    setPaid.mockReturnValue(save.promise);
+    await mount(allButOne);
+    expect(container.querySelector(".confetti")).toBeNull();
+    expect(q(".ring").classList.contains("celebrate")).toBe(false);
+
+    await tap(toggles()[2]);
+
+    expect(container.querySelectorAll(".confetti i")).toHaveLength(28);
+    expect(q(".ring").classList.contains("celebrate")).toBe(true);
+    expect(q(".ring").classList.contains("complete")).toBe(true);
+
+    save.resolve({ ok: true });
+    await flush();
+  });
+
+  it("does not celebrate just because the page loaded with the pot already complete", async () => {
+    stubMotion(false);
+    await mount(allPaid);
+    expect(q(".ring").classList.contains("complete")).toBe(true);
+    expect(container.querySelector(".confetti")).toBeNull();
+    expect(q(".ring").classList.contains("celebrate")).toBe(false);
+  });
+
+  it("skips the confetti entirely for users who prefer reduced motion", async () => {
+    stubMotion(true);
+    const save = deferred<{ ok: true }>();
+    setPaid.mockReturnValue(save.promise);
+    await mount(allButOne);
+    await tap(toggles()[2]);
+    expect(q(".banner")).not.toBeNull(); // the information still appears
+    expect(container.querySelector(".confetti")).toBeNull();
+    expect(q(".ring").classList.contains("celebrate")).toBe(false);
+    save.resolve({ ok: true });
+    await flush();
+  });
+
+  it("sweeps light across a row when it is marked paid, and not when it is unmarked", async () => {
+    const save = deferred<{ ok: true }>();
+    setPaid.mockReturnValue(save.promise);
+    await mount();
+
+    await tap(toggles()[0]);
+    expect(toggles()[0].classList.contains("swept")).toBe(true);
+    save.resolve({ ok: true });
+    await flush();
+
+    // Start again with Agnes already paid: unmarking her must not sweep.
+    await act(async () => { root?.unmount(); });
+    root = undefined;
+    const unmark = deferred<{ ok: true }>();
+    setPaid.mockReturnValue(unmark.promise);
+    await mount({ ...props, payers: [{ id: 1, name: "Agnes Wanjira", paid: true }, props.payers[1], props.payers[2]] });
+    await tap(toggles()[0]);
+    expect(toggles()[0].classList.contains("swept")).toBe(false);
+    unmark.resolve({ ok: true });
+    await flush();
+  });
+
+  it("gives each row its place in the entrance cascade", async () => {
+    await mount();
+    expect(toggles().map((t) => t.style.getPropertyValue("--i"))).toEqual(["4", "5", "6"]);
+  });
+});
+
 describe("RoundLive before the page is ready", () => {
   it("server-renders toggles and buttons as disabled, then enables them once hydrated", async () => {
     setPaid.mockResolvedValue({ ok: true });

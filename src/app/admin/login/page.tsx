@@ -7,7 +7,7 @@ export const dynamic = "force-dynamic";
 export default async function LoginPage() {
   if (await isAdmin()) redirect("/admin");
   return (
-    <main className="page narrow">
+    <main className="page narrow cascade">
       <section className="hero login-hero">
         <p className="hero-label">Contribution Circle</p>
         <h1 className="hero-name">Admin sign in</h1>

@@ -63,7 +63,11 @@ export function ShareSheet({ message, image }: { message: string; image: Omit<St
         className="btn green"
         data-action="share"
         disabled={!hydrated}
-        onClick={() => dialogRef.current?.showModal()}
+        onClick={() => {
+          dialogRef.current?.showModal();
+          // Start on Copy, not on the (scrollable) message box, which would show a focus ring on open.
+          dialogRef.current?.querySelector<HTMLElement>("[data-action=copy]")?.focus({ preventScroll: true });
+        }}
       >
         <Icon name="share" size={20} />
         Share update

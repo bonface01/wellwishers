@@ -1,9 +1,19 @@
 "use client";
 
-import { useEffect, useMemo, useOptimistic, useRef, useState, useTransition, type ReactNode } from "react";
+import {
+  useEffect,
+  useMemo,
+  useOptimistic,
+  useRef,
+  useState,
+  useTransition,
+  type CSSProperties,
+  type ReactNode,
+} from "react";
 import { setPaid, type FormState } from "@/app/actions";
+import { makeConfetti, type Particle } from "@/lib/confetti";
 import { formatMoney } from "@/lib/format";
-import { buzz } from "@/lib/motion";
+import { buzz, prefersReducedMotion } from "@/lib/motion";
 import { summarizeRound, type Payer } from "@/lib/round";
 import { useHydrated } from "@/lib/use-hydrated";
 import { buildWhatsAppMessage } from "@/lib/whatsapp";
@@ -67,6 +77,29 @@ export function RoundLive(props: LiveRoundProps) {
 
   const s = summarizeRound(props.payers, paidIds, props.amount);
   const complete = isComplete(s.paid.length, props.payers.length);
+
+  // Row that was just marked paid (drives the light sweep) and the one-off pot-complete celebration.
+  const [swept, setSwept] = useState<number | null>(null);
+  const [burst, setBurst] = useState<Particle[] | null>(null);
+  const wasComplete = useRef(complete);
+
+  useEffect(() => {
+    if (swept === null) return;
+    const id = setTimeout(() => setSwept(null), 900);
+    return () => clearTimeout(id);
+  }, [swept]);
+
+  useEffect(() => {
+    // Only when the pot *becomes* complete, never just because the page loaded that way.
+    if (complete && !wasComplete.current && !prefersReducedMotion()) setBurst(makeConfetti());
+    wasComplete.current = complete;
+  }, [complete]);
+
+  useEffect(() => {
+    if (!burst) return;
+    const id = setTimeout(() => setBurst(null), 2200);
+    return () => clearTimeout(id);
+  }, [burst]);
   const paidNames = s.paid.map((p) => p.name);
   const unpaidNames = s.unpaid.map((p) => p.name);
   const message = buildWhatsAppMessage({
@@ -87,6 +120,7 @@ export function RoundLive(props: LiveRoundProps) {
     setSaving([...inFlight.current]);
     setError(undefined);
     buzz(10);
+    if (next) setSwept(p.id);
 
     startTransition(async () => {
       applyPaid({ id: p.id, paid: next });
@@ -117,6 +151,8 @@ export function RoundLive(props: LiveRoundProps) {
         totalCount={props.payers.length}
         nextName={props.nextName}
         nextIsNewCycle={props.nextIsNewCycle}
+        celebrate={burst !== null}
+        confetti={burst}
       />
 
       {complete && (
@@ -148,7 +184,8 @@ export function RoundLive(props: LiveRoundProps) {
                 <button
                   key={p.id}
                   type="button"
-                  className={`toggle ${isPaid ? "paid" : ""}`}
+                  className={`toggle ${isPaid ? "paid" : ""} ${swept === p.id && isPaid ? "swept" : ""}`}
+                  style={{ "--i": index + 4 } as CSSProperties}
                   aria-pressed={isPaid}
                   aria-busy={saving.includes(p.id)}
                   disabled={!hydrated}

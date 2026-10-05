@@ -2,6 +2,8 @@
 
 import { formatMoney } from "@/lib/format";
 import { formatCountdown, nextPayoutAt } from "@/lib/countdown";
+import type { Particle } from "@/lib/confetti";
+import { Confetti, Tilt } from "./effects";
 import { Money, Ring, useNow } from "./ui";
 
 /** Group name, big "Week N", and a live "Payout in …" pill counting down to Sunday 18:00 Nairobi time. */
@@ -33,6 +35,10 @@ export type HeroProps = {
   totalCount: number;
   nextName: string | null;
   nextIsNewCycle: boolean;
+  /** Ring glows and pulses once (set briefly when the pot becomes complete). */
+  celebrate?: boolean;
+  /** Confetti pieces to show right now, if any. */
+  confetti?: Particle[] | null;
 };
 
 export function isComplete(paidCount: number, totalCount: number) {
@@ -43,27 +49,30 @@ export function isComplete(paidCount: number, totalCount: number) {
 export function Hero(p: HeroProps) {
   const complete = isComplete(p.paidCount, p.totalCount);
   return (
-    <section className={`hero ${complete ? "is-complete" : ""}`}>
-      <div className="hero-main">
-        <Ring paid={p.paidCount} total={p.totalCount} complete={complete} />
-        <div className="hero-text">
-          <p className="hero-label">This week&apos;s pot goes to</p>
-          <h2 className="hero-name">{p.recipientName ?? "—"}</h2>
-          <p className="hero-collected">
-            <Money value={p.collected} currency={p.currency} />
-          </p>
-          <p className="hero-expected">of {formatMoney(p.expected, p.currency)} expected</p>
+    <Tilt className="hero-wrap">
+      <section className={`hero ${complete ? "is-complete" : ""}`}>
+        <div className="hero-main">
+          <Ring paid={p.paidCount} total={p.totalCount} complete={complete} celebrate={p.celebrate} />
+          <div className="hero-text">
+            <p className="hero-label">This week&apos;s pot goes to</p>
+            <h2 className="hero-name">{p.recipientName ?? "—"}</h2>
+            <p className="hero-collected">
+              <Money value={p.collected} currency={p.currency} />
+            </p>
+            <p className="hero-expected">of {formatMoney(p.expected, p.currency)} expected</p>
+          </div>
         </div>
-      </div>
-      {p.nextName && (
-        <>
-          <hr className="hero-divider" />
-          <p className="hero-next">
-            Next week: <strong>{p.nextName}</strong>
-            {p.nextIsNewCycle && <span className="hero-muted"> (new cycle)</span>}
-          </p>
-        </>
-      )}
-    </section>
+        {p.nextName && (
+          <>
+            <hr className="hero-divider" />
+            <p className="hero-next">
+              Next week: <strong>{p.nextName}</strong>
+              {p.nextIsNewCycle && <span className="hero-muted"> (new cycle)</span>}
+            </p>
+          </>
+        )}
+      </section>
+      {p.confetti && p.confetti.length > 0 && <Confetti particles={p.confetti} />}
+    </Tilt>
   );
 }

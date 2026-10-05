@@ -16,14 +16,12 @@ export type StatusImageInput = {
 };
 
 const C = {
-  bgTop: "#143A2E",
-  bgBottom: "#0B1F19",
+  base: "#07140F",
   text: "#F3F1E8",
   muted: "#9DB8AC",
   amber: "#F2B544",
   progress: "#3FCB8A",
   track: "rgba(255,255,255,0.14)",
-  panel: "rgba(255,255,255,0.06)",
 };
 
 const PAD = 88;
@@ -40,6 +38,61 @@ function roundedRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: num
   ctx.arcTo(x, y + h, x, y, rr);
   ctx.arcTo(x, y, x + w, y, rr);
   ctx.closePath();
+}
+
+/** Frosted-glass card: soft shadow, tinted translucent fill, 2px light border and a bright top edge. */
+function glassCard(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number, hero = false) {
+  ctx.save();
+  ctx.shadowColor = "rgba(0,0,0,0.45)";
+  ctx.shadowBlur = 56;
+  ctx.shadowOffsetY = 22;
+  ctx.fillStyle = hero ? "rgba(15,42,34,0.78)" : "rgba(7,20,15,0.34)";
+  roundedRect(ctx, x, y, w, h, r);
+  ctx.fill();
+  ctx.restore();
+
+  ctx.fillStyle = hero ? "rgba(255,255,255,0.07)" : "rgba(255,255,255,0.08)";
+  roundedRect(ctx, x, y, w, h, r);
+  ctx.fill();
+
+  ctx.lineWidth = 2;
+  ctx.strokeStyle = "rgba(255,255,255,0.16)";
+  roundedRect(ctx, x + 1, y + 1, w - 2, h - 2, r);
+  ctx.stroke();
+
+  ctx.strokeStyle = "rgba(255,255,255,0.3)";
+  ctx.beginPath();
+  ctx.moveTo(x + r, y + 2);
+  ctx.lineTo(x + w - r, y + 2);
+  ctx.stroke();
+}
+
+/** Drifting colour orbs, the same idea as the app backdrop. */
+function drawOrbs(ctx: CanvasRenderingContext2D) {
+  const orbs: [number, number, number, string][] = [
+    [140, 160, 900, "16,185,129,0.5"],
+    [980, 720, 820, "13,148,136,0.42"],
+    [160, 1740, 980, "6,95,70,0.6"],
+    [940, 1790, 540, "242,181,68,0.24"],
+  ];
+  for (const [x, y, r, rgba] of orbs) {
+    const g = ctx.createRadialGradient(x, y, 0, x, y, r);
+    g.addColorStop(0, `rgba(${rgba})`);
+    g.addColorStop(1, `rgba(${rgba.replace(/,[^,]+$/, ",0")})`);
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, W, H);
+  }
+}
+
+/** Faint, repeatable film grain (fixed seed, so the image is the same every time). */
+function drawGrain(ctx: CanvasRenderingContext2D) {
+  let seed = 20260101;
+  const rand = () => {
+    seed = (seed * 1664525 + 1013904223) % 4294967296;
+    return seed / 4294967296;
+  };
+  ctx.fillStyle = "rgba(255,255,255,0.055)";
+  for (let i = 0; i < 5200; i++) ctx.fillRect(Math.floor(rand() * W), Math.floor(rand() * H), 2, 2);
 }
 
 /** Largest font size (between min and max) at which `text` fits `maxWidth`. */
@@ -68,28 +121,25 @@ export function drawStatusImage(ctx: CanvasRenderingContext2D, i: StatusImageInp
   ctx.textBaseline = "alphabetic";
   ctx.textAlign = "left";
 
-  // Background
-  const bg = ctx.createLinearGradient(0, 0, 0, H);
-  bg.addColorStop(0, C.bgTop);
-  bg.addColorStop(1, C.bgBottom);
-  ctx.fillStyle = bg;
+  // Backdrop
+  ctx.fillStyle = C.base;
   ctx.fillRect(0, 0, W, H);
-  const glow = ctx.createRadialGradient(W - 120, 200, 0, W - 120, 200, 700);
-  glow.addColorStop(0, "rgba(63,203,138,0.22)");
-  glow.addColorStop(1, "rgba(63,203,138,0)");
-  ctx.fillStyle = glow;
-  ctx.fillRect(0, 0, W, H);
+  drawOrbs(ctx);
+  drawGrain(ctx);
 
   // Layout positions, worked out first so the whole block can be centred vertically.
   const panelY = 400;
-  const panelH = 640;
-  const barY = panelY + panelH + 84;
-  const listTop = barY + 350;
+  const panelH = 600;
+  const card2Y = panelY + panelH + 24;
+  const card2H = 300;
+  const barY = card2Y + 64;
+  const card3Y = card2Y + card2H + 24;
+  const listStart = card3Y + 146;
   const lineH = 70;
-  const maxLines = Math.max(1, Math.floor((H - 120 - (listTop + 40)) / lineH));
+  const maxLines = Math.max(1, Math.floor((H - 100 - 54 - listStart) / lineH) + 1);
   const linesUsed = i.unpaid.length === 0 ? 1 : Math.min(i.unpaid.length, maxLines);
-  const contentBottom = listTop + 84 + linesUsed * lineH;
-  const offset = Math.max(0, Math.min(220, Math.floor((H - 100 - contentBottom) / 2)));
+  const card3Bottom = listStart + (linesUsed - 1) * lineH + 54;
+  const offset = Math.max(0, Math.min(220, Math.floor((H - 100 - card3Bottom) / 2)));
   ctx.save();
   ctx.translate(0, offset);
 
@@ -101,11 +151,8 @@ export function drawStatusImage(ctx: CanvasRenderingContext2D, i: StatusImageInp
   ctx.font = `800 128px ${family}`;
   ctx.fillText(`Week ${i.week}`, PAD, 305);
 
-  // Pot panel
-  ctx.fillStyle = C.panel;
-  roundedRect(ctx, PAD, panelY, inner, panelH, 56);
-  ctx.fill();
-
+  // Pot card
+  glassCard(ctx, PAD, panelY, inner, panelH, 56, true);
   ctx.fillStyle = C.muted;
   ctx.font = `600 34px ${family}`;
   ctx.fillText("THIS WEEK'S POT GOES TO", PAD + 56, panelY + 104);
@@ -116,7 +163,7 @@ export function drawStatusImage(ctx: CanvasRenderingContext2D, i: StatusImageInp
   ctx.fillText(truncate(ctx, i.recipientName, inner - 112), PAD + 56, panelY + 104 + 24 + nameSize);
 
   // Amount: small currency, big number
-  const amountY = panelY + 450;
+  const amountY = panelY + 430;
   const numText = num(i.collected);
   const numSize = fit(ctx, numText, inner - 112 - (i.currency ? 150 : 0), 190, 90, 800, family);
   let x = PAD + 56;
@@ -139,58 +186,61 @@ export function drawStatusImage(ctx: CanvasRenderingContext2D, i: StatusImageInp
     amountY + 78,
   );
 
-  // Segmented progress bar
+  // Progress card: segmented bar, count, next recipient
+  glassCard(ctx, PAD, card2Y, inner, card2H, 48);
   const segments = Math.max(1, Math.min(i.totalCount, 30));
   const filled = i.totalCount > 30 ? Math.round((i.paidCount / i.totalCount) * segments) : i.paidCount;
   const gap = segments > 16 ? 6 : 10;
-  const segW = (inner - gap * (segments - 1)) / segments;
+  const barX = PAD + 48;
+  const barW = inner - 96;
+  const segW = (barW - gap * (segments - 1)) / segments;
   for (let s = 0; s < segments; s++) {
     ctx.fillStyle = s < filled ? accent : C.track;
-    roundedRect(ctx, PAD + s * (segW + gap), barY, segW, 40, Math.min(14, segW / 2));
+    roundedRect(ctx, barX + s * (segW + gap), barY, segW, 40, Math.min(14, segW / 2));
     ctx.fill();
   }
 
   ctx.fillStyle = C.text;
   ctx.font = `700 60px ${family}`;
-  ctx.fillText(`${i.paidCount} of ${i.totalCount} paid`, PAD, barY + 130);
+  ctx.fillText(`${i.paidCount} of ${i.totalCount} paid`, barX, barY + 122);
   if (complete) {
     ctx.fillStyle = C.amber;
     ctx.font = `700 40px ${family}`;
     ctx.textAlign = "right";
-    ctx.fillText("Pot complete", W - PAD, barY + 130);
+    ctx.fillText("Pot complete", PAD + inner - 48, barY + 122);
     ctx.textAlign = "left";
   }
-
-  // Next recipient
   if (i.nextName) {
     ctx.fillStyle = C.muted;
     ctx.font = `600 44px ${family}`;
-    ctx.fillText(truncate(ctx, `Next: ${i.nextName}`, inner), PAD, barY + 240);
+    ctx.fillText(truncate(ctx, `Next: ${i.nextName}`, inner - 96), barX, barY + 196);
   }
 
   // Who still has to pay
+  glassCard(ctx, PAD, card3Y, inner, card3Bottom - card3Y, 48);
   ctx.fillStyle = C.muted;
   ctx.font = `600 32px ${family}`;
-  ctx.fillText("STILL TO PAY", PAD, listTop);
+  ctx.fillText("STILL TO PAY", barX, card3Y + 76);
   if (i.unpaid.length === 0) {
     ctx.fillStyle = C.amber;
     ctx.font = `700 48px ${family}`;
-    ctx.fillText("Everyone has paid", PAD, listTop + 84);
+    ctx.fillText("Everyone has paid", barX, listStart);
   } else {
     const shown = i.unpaid.length > maxLines ? maxLines - 1 : i.unpaid.length;
     ctx.fillStyle = C.text;
     ctx.font = `600 46px ${family}`;
     for (let n = 0; n < shown; n++) {
-      ctx.fillText(truncate(ctx, i.unpaid[n], inner - 40), PAD + 40, listTop + 84 + n * lineH);
-      ctx.fillStyle = "#C98A1B";
+      const y = listStart + n * lineH;
+      ctx.fillText(truncate(ctx, i.unpaid[n], inner - 140), barX + 40, y);
+      ctx.fillStyle = "#E3A532";
       ctx.beginPath();
-      ctx.arc(PAD + 10, listTop + 84 + n * lineH - 16, 9, 0, Math.PI * 2);
+      ctx.arc(barX + 10, y - 16, 9, 0, Math.PI * 2);
       ctx.fill();
       ctx.fillStyle = C.text;
     }
     if (shown < i.unpaid.length) {
       ctx.fillStyle = C.muted;
-      ctx.fillText(`+${i.unpaid.length - shown} more`, PAD + 40, listTop + 84 + shown * lineH);
+      ctx.fillText(`+${i.unpaid.length - shown} more`, barX + 40, listStart + shown * lineH);
     }
   }
   ctx.restore();
